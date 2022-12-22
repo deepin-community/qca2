@@ -1,0 +1,32 @@
+#!/usr/bin/make -f
+
+include /usr/share/dpkg/architecture.mk
+
+export DEB_CFLAGS_MAINT_APPEND = -fvisibility=hidden -fvisibility-inlines-hidden
+export DEB_CXXFLAGS_MAINT_APPEND = -fvisibility=hidden -fvisibility-inlines-hidden
+
+# Enable strict interdependencies
+libpkgs_gen_strict_local_shlibs = $(libpkgs_all_packages)
+include /usr/share/pkg-kde-tools/qt-kde-team/3/library-packages.mk
+
+%:
+	dh $@ --builddirectory=build
+
+override_dh_auto_configure:
+	QT_SELECT=qt5 dh_auto_configure --builddirectory=build -- \
+	    -DQT5_BUILD=ON -DLIB_SUFFIX="/$(DEB_HOST_MULTIARCH)" \
+	    -DQCA_FEATURE_INSTALL_DIR="/usr/lib/$(DEB_HOST_MULTIARCH)/qt5/mkspecs/features"
+
+override_dh_auto_build-arch:
+	dh_auto_build --builddirectory=build
+
+override_dh_auto_build-indep:
+	dh_auto_build --builddirectory=build -- doc
+	find build/apidocs/html -name '*.md5' -delete
+
+override_dh_auto_install-indep:
+
+override_dh_auto_test-indep:
+
+override_dh_gencontrol-arch: libpkgs_gen_strict_local_shlibs
+	dh_gencontrol -a
