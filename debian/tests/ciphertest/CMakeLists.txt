@@ -1,21 +1,21 @@
+cmake_minimum_required(VERSION 3.13)
+
 project(ciphertest)
 
-cmake_minimum_required(VERSION 2.8.12)
-
-option(USE_QT5 "Build for Qt5" OFF)
-
-if(USE_QT5)
+if(QT_VERSION STREQUAL "6")
+  find_package(Qt6Core REQUIRED)
+  find_package(Qca-qt6 REQUIRED)
+elseif(QT_VERSION STREQUAL "5")
   find_package(Qt5Core REQUIRED)
   find_package(Qca-qt5 REQUIRED)
-else()
-  find_package(Qt4 REQUIRED)
-  find_package(Qca REQUIRED)
+elseif()
+  message(FATAL_ERROR "unknown QT_VERSION: '${QT_VERSION}'")
 endif()
 
 add_executable(ciphertest ciphertest.cpp)
 
-if(USE_QT5)
+if(QT_VERSION STREQUAL "6")
+  target_link_libraries(ciphertest Qt6::Core qca-qt6)
+elseif(QT_VERSION STREQUAL "5")
   target_link_libraries(ciphertest Qt5::Core qca-qt5)
-else()
-  target_link_libraries(ciphertest ${QT_QTCORE_LIBRARY} qca)
 endif()

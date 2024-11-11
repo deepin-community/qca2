@@ -4,10 +4,12 @@ set -e
 
 TESTDIR=$(pwd)/debian/tests/ciphertest
 
-if [ "$1" = "--qt5" ]; then
-  CONF_FLAGS="-DUSE_QT5=ON"
+if [ "$1" = "--qt6" ]; then
+  CONF_FLAGS="-DQT_VERSION=6"
+elif [ "$1" = "--qt5" ]; then
+  CONF_FLAGS="-DQT_VERSION=5"
 else
-  echo "Usage $1 <--qt4,--qt5>"
+  echo "Usage $1 --qt5|--qt6"
   exit 1
 fi
 

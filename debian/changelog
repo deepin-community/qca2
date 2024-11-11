@@ -1,8 +1,116 @@
-qca2 (2.3.4-1deepin0) unstable; urgency=medium
+qca2 (2.3.9-1) unstable; urgency=medium
 
-  * No source change upload against GCC 12.
+  * New upstream release.
+  * Switch the transitional pkg-config build dependency to pkgconf.
+  * Bump Standards-Version to 4.7.0, no changes required.
+  * Small updates to copyright.
 
- -- Tianyu Chen <sweetyfish@deepin.org>  Fri, 20 Sep 2024 12:16:17 +0800
+ -- Pino Toscano <pino@debian.org>  Tue, 25 Jun 2024 05:56:44 +0200
+
+qca2 (2.3.8-1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Pino Toscano <pino@debian.org>  Tue, 09 Jan 2024 22:41:59 +0100
+
+qca2 (2.3.7-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Fix typo in plugins recommend in libqca-qt6-2.
+  * Fix qt6 path in QCA_FEATURE_INSTALL_DIR for the Qt 6 build (although it is
+    not actually used).
+  * Update symbols files from the logs of buildds.
+  * Add openssl as build dependency for the tests, so we get the default openssl
+    configuration.
+
+ -- Pino Toscano <pino@debian.org>  Thu, 27 Jul 2023 06:38:14 +0200
+
+qca2 (2.3.6-4) unstable; urgency=medium
+
+  * Upload to unstable.
+  * Update symbols files from the logs of buildds.
+
+ -- Pino Toscano <pino@debian.org>  Sat, 15 Jul 2023 22:54:34 +0200
+
+qca2 (2.3.6-3) experimental; urgency=medium
+
+  * General changes to the ciphertest autopkgtest source:
+    - generalize it a bit w.r.t. the Qt version to use
+    - drop leftovers of Qt 4 support
+  * Build Qt 6 library, plugins, and tools:
+    - add the qt6-base-dev, and qt6-5compat-dev build dependencies
+    - add new configure, build, and test steps for a separate Qt 6 variant
+    - add new libqca-qt6-2, libqca-qt6-plugins, qca-qt6-utils, and
+      libqca-qt6-dev binary packages
+    - extend to also support Qt 6, and add a ciphertest-qt6 autopkgtest
+  * Tweak the descriptions of all the Qt 5 & Qt 6 packages to mention the Qt
+    version.
+  * Drop old qca-dev conflict in libqca-qt5-2-dev.
+
+ -- Pino Toscano <pino@debian.org>  Sat, 15 Jul 2023 10:05:57 +0200
+
+qca2 (2.3.6-2) unstable; urgency=medium
+
+  * ciphertest-qt5 autopkgtest: call bump the cmake_minimum_required() to 3.13.
+    (Closes: #1040732)
+
+ -- Pino Toscano <pino@debian.org>  Thu, 13 Jul 2023 09:03:09 +0200
+
+qca2 (2.3.6-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Update the patches:
+    - upstream_hashunittest-run-sha384longtest-only-for-providers-t.patch: drop,
+      backported from upstream
+    - upstream_Remove-test-that-openssl-has-decided-it-s-wrong.patch: drop,
+      backported from upstream
+  * ciphertest-qt5 autopkgtest: call cmake_minimum_required() before project()
+    in the CMakeLists.txt. (Closes: #1036845)
+
+ -- Pino Toscano <pino@debian.org>  Mon, 12 Jun 2023 00:01:15 +0200
+
+qca2 (2.3.5-2) unstable; urgency=medium
+
+  * Backport upstream commit 714073747c4a3ccff7a8c85c72872bdf6bd3db4a to disable
+    one test that fails with OpenSSL 3.0.8; patch
+    upstream_Remove-test-that-openssl-has-decided-it-s-wrong.patch.
+    (Closes: #1031438)
+  * Set upstream metadata fields: Bug-Database, Bug-Submit.
+  * Update standards version to 4.6.2, no changes needed.
+
+ -- Pino Toscano <pino@debian.org>  Sat, 25 Feb 2023 17:05:23 +0100
+
+qca2 (2.3.5-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Update standards version to 4.6.1, no changes needed.
+  * CI: enable again the blhc job.
+  * Update the build dependencies according to the upstream build system:
+    - bump cmake to 3.16
+  * Update the patches:
+    - define_qca_export.diff: drop, fixed upstream
+    - pipeunittest_more_wait.diff: refresh
+  * Factorize the common cmake arguments for different Qt versions in a single
+    variable.
+  * Explicitly disable all the plugins which we currently do not want to build;
+    this way, having the dependencies for them installed will not cause a build
+    failure due to unhandled files (Closes: #1019464)
+    - pass to cmake: -DWITH_botan_PLUGIN=NO -DWITH_gcrypt_PLUGIN=NO
+      -DWITH_nss_PLUGIN=NO -DWITH_pkcs11_PLUGIN=NO
+  * Backport upstream commit 33a35a699928318032f62eab0e39e263c604ad9e to fix
+    a crash in hashunittest; patch
+    upstream_hashunittest-run-sha384longtest-only-for-providers-t.patch.
+  * Update lintian overrides.
+  * Export QT_PLUGIN_PATH with the build location of the plugin when running
+    dh_auto_test: this way, the unit tests can use the plugins.
+  * Add the gnupg test-only build dependency, needed for the tests of the gnupg
+    plugin.
+  * Disable pgpunittest for now, as some tests fail in build-like environments;
+    patch disable_pgpunittest.diff.
+  * Remove inactive Uploaders, adding myself as one to avoid leaving the source
+    with no human maintainers.
+
+ -- Pino Toscano <pino@debian.org>  Sat, 22 Oct 2022 16:37:05 +0200
 
 qca2 (2.3.4-1) unstable; urgency=medium
 

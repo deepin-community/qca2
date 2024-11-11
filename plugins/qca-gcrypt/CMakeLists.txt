@@ -1,7 +1,9 @@
+find_package(PkgConfig REQUIRED)
+
 if(WITH_gcrypt_PLUGIN STREQUAL "yes")
-  find_package(LibGcrypt REQUIRED)
+  pkg_check_modules(LIBGCRYPT REQUIRED IMPORTED_TARGET libgcrypt)
 else()
-  find_package(LibGcrypt)
+  pkg_check_modules(LIBGCRYPT IMPORTED_TARGET libgcrypt)
 endif()
 
 if(LIBGCRYPT_FOUND)
@@ -25,11 +27,7 @@ if(LIBGCRYPT_FOUND)
       set_property(TARGET qca-gcrypt PROPERTY SUFFIX ".dylib")
     endif()
 
-    if(QT6)
-      target_link_libraries(qca-gcrypt Qt6::Core ${QCA_LIB_NAME} ${LIBGCRYPT_LIBRARIES})
-    else()
-      target_link_libraries(qca-gcrypt Qt5::Core ${QCA_LIB_NAME} ${LIBGCRYPT_LIBRARIES})
-    endif()
+    target_link_libraries(qca-gcrypt Qt${QT_MAJOR_VERSION}::Core ${QCA_LIB_NAME} ${LIBGCRYPT_LIBRARIES})
 
     if(NOT DEVELOPER_MODE)
       install(TARGETS qca-gcrypt

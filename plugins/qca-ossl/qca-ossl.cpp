@@ -32,6 +32,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 
 #include <openssl/err.h>
 #include <openssl/opensslv.h>
@@ -49,10 +50,16 @@
 using namespace QCA;
 
 namespace {
-static const auto DsaDeleter = [](DSA *pointer) {
-    if (pointer)
-        DSA_free((DSA *)pointer);
+struct DsaDeleter
+{
+    void operator()(DSA *pointer)
+    {
+        if (pointer)
+            DSA_free(pointer);
+    }
 };
+
+static bool s_legacyProviderAvailable = false;
 } // end of anonymous namespace
 
 namespace opensslQCAPlugin {
@@ -131,7 +138,7 @@ static SecureArray bn2fixedbuf(const BIGNUM *n, int size)
 
 static SecureArray dsasig_der_to_raw(const SecureArray &in)
 {
-    DSA_SIG *            sig = DSA_SIG_new();
+    DSA_SIG             *sig = DSA_SIG_new();
     const unsigned char *inp = (const unsigned char *)in.data();
     d2i_DSA_SIG(&sig, &inp, in.size());
 
@@ -153,11 +160,11 @@ static SecureArray dsasig_raw_to_der(const SecureArray &in)
     if (in.size() != 40)
         return SecureArray();
 
-    DSA_SIG *   sig = DSA_SIG_new();
+    DSA_SIG    *sig = DSA_SIG_new();
     SecureArray part_r(20);
-    BIGNUM *    bnr;
+    BIGNUM     *bnr;
     SecureArray part_s(20);
-    BIGNUM *    bns;
+    BIGNUM     *bns;
     memcpy(part_r.data(), in.data(), 20);
     memcpy(part_s.data(), in.data() + 20, 20);
     bnr = BN_bin2bn((const unsigned char *)part_r.data(), part_r.size(), nullptr);
@@ -303,7 +310,7 @@ static void try_get_name_item(X509_NAME *name, int nid, const CertificateInfoTyp
     loc = -1;
     while ((loc = X509_NAME_get_index_by_NID(name, nid, loc)) != -1) {
         X509_NAME_ENTRY *ne   = X509_NAME_get_entry(name, loc);
-        ASN1_STRING *    data = X509_NAME_ENTRY_get_data(ne);
+        ASN1_STRING     *data = X509_NAME_ENTRY_get_data(ne);
         QByteArray       cs((const char *)data->data, data->length);
         info->insert(t, QString::fromLatin1(cs));
     }
@@ -320,7 +327,7 @@ try_get_name_item_by_oid(X509_NAME *name, const QString &oidText, const Certific
     loc = -1;
     while ((loc = X509_NAME_get_index_by_OBJ(name, oid, loc)) != -1) {
         X509_NAME_ENTRY *ne   = X509_NAME_get_entry(name, loc);
-        ASN1_STRING *    data = X509_NAME_ENTRY_get_data(ne);
+        ASN1_STRING     *data = X509_NAME_ENTRY_get_data(ne);
         QByteArray       cs((const char *)data->data, data->length);
         info->insert(t, QString::fromLatin1(cs));
         qDebug() << "oid: " << oidText << ",  result: " << cs;
@@ -637,7 +644,7 @@ static void try_get_general_name(GENERAL_NAMES *names, const CertificateInfoType
 static CertificateInfo get_cert_alt_name(X509_EXTENSION *ex)
 {
     CertificateInfo info;
-    GENERAL_NAMES * gn = (GENERAL_NAMES *)X509V3_EXT_d2i(ex);
+    GENERAL_NAMES  *gn = (GENERAL_NAMES *)X509V3_EXT_d2i(ex);
     try_get_general_name(gn, Email, &info);
     try_get_general_name(gn, URI, &info);
     try_get_general_name(gn, DNS, &info);
@@ -701,14 +708,14 @@ static Constraints get_cert_key_usage(X509_EXTENSION *ex)
 {
     Constraints constraints;
     int         bit_table[9] = {DigitalSignature,
-                        NonRepudiation,
-                        KeyEncipherment,
-                        DataEncipherment,
-                        KeyAgreement,
-                        KeyCertificateSign,
-                        CRLSign,
-                        EncipherOnly,
-                        DecipherOnly};
+                                NonRepudiation,
+                                KeyEncipherment,
+                                DataEncipherment,
+                                KeyAgreement,
+                                KeyCertificateSign,
+                                CRLSign,
+                                EncipherOnly,
+                                DecipherOnly};
 
     ASN1_BIT_STRING *keyusage = (ASN1_BIT_STRING *)X509V3_EXT_d2i(ex);
     for (int n = 0; n < 9; ++n) {
@@ -828,7 +835,7 @@ static X509_EXTENSION *new_cert_policies(const QStringList &policies)
     STACK_OF(POLICYINFO) *pols = nullptr;
     for (int n = 0; n < policies.count(); ++n) {
         const QByteArray cs  = policies[n].toLatin1();
-        ASN1_OBJECT *    obj = OBJ_txt2obj(cs.data(), 1); // 1 = only accept dotted input
+        ASN1_OBJECT     *obj = OBJ_txt2obj(cs.data(), 1); // 1 = only accept dotted input
         if (!obj)
             continue;
         if (!pols)
@@ -1041,7 +1048,7 @@ public:
 
 protected:
     const EVP_MD *m_algorithm;
-    EVP_MD_CTX *  m_context;
+    EVP_MD_CTX   *m_context;
 };
 
 class opensslPbkdf1Context : public KDFContext
@@ -1051,6 +1058,7 @@ public:
     opensslPbkdf1Context(const EVP_MD *algorithm, Provider *p, const QString &type)
         : KDFContext(p, type)
     {
+        Q_ASSERT(s_legacyProviderAvailable);
         m_algorithm = algorithm;
         m_context   = EVP_MD_CTX_new();
         EVP_DigestInit(m_context, m_algorithm);
@@ -1074,7 +1082,7 @@ public:
         return new opensslPbkdf1Context(*this);
     }
 
-    SymmetricKey makeKey(const SecureArray &         secret,
+    SymmetricKey makeKey(const SecureArray          &secret,
                          const InitializationVector &salt,
                          unsigned int                keyLength,
                          unsigned int                iterationCount) override
@@ -1123,11 +1131,11 @@ public:
         return a;
     }
 
-    SymmetricKey makeKey(const SecureArray &         secret,
+    SymmetricKey makeKey(const SecureArray          &secret,
                          const InitializationVector &salt,
                          unsigned int                keyLength,
                          int                         msecInterval,
-                         unsigned int *              iterationCount) override
+                         unsigned int               *iterationCount) override
     {
         Q_ASSERT(iterationCount != nullptr);
         QElapsedTimer timer;
@@ -1184,7 +1192,7 @@ public:
 
 protected:
     const EVP_MD *m_algorithm;
-    EVP_MD_CTX *  m_context;
+    EVP_MD_CTX   *m_context;
 };
 
 class opensslPbkdf2Context : public KDFContext
@@ -1201,7 +1209,7 @@ public:
         return new opensslPbkdf2Context(*this);
     }
 
-    SymmetricKey makeKey(const SecureArray &         secret,
+    SymmetricKey makeKey(const SecureArray          &secret,
                          const InitializationVector &salt,
                          unsigned int                keyLength,
                          unsigned int                iterationCount) override
@@ -1217,11 +1225,11 @@ public:
         return out;
     }
 
-    SymmetricKey makeKey(const SecureArray &         secret,
+    SymmetricKey makeKey(const SecureArray          &secret,
                          const InitializationVector &salt,
                          unsigned int                keyLength,
                          int                         msecInterval,
-                         unsigned int *              iterationCount) override
+                         unsigned int               *iterationCount) override
     {
         Q_ASSERT(iterationCount != nullptr);
         QElapsedTimer timer;
@@ -1268,7 +1276,7 @@ public:
         return new opensslHkdfContext(*this);
     }
 
-    SymmetricKey makeKey(const SecureArray &         secret,
+    SymmetricKey makeKey(const SecureArray          &secret,
                          const InitializationVector &salt,
                          const InitializationVector &info,
                          unsigned int                keyLength) override
@@ -1340,7 +1348,7 @@ public:
     }
 
 protected:
-    HMAC_CTX *    m_context;
+    HMAC_CTX     *m_context;
     const EVP_MD *m_algorithm;
 };
 
@@ -1360,7 +1368,7 @@ public:
         VerifyActive,
         VerifyError
     };
-    EVP_PKEY *  pkey;
+    EVP_PKEY   *pkey;
     EVP_MD_CTX *mdctx;
     State       state;
     bool        raw_type;
@@ -1578,6 +1586,7 @@ static const char *IETF_4096_PRIME =
     "93B4EA98 8D8FDDC1 86FFB7DC 90A6C08F 4DF435C9 34063199"
     "FFFFFFFF FFFFFFFF";
 
+#ifndef OPENSSL_FIPS
 // JCE seeds from Botan
 static const char *JCE_512_SEED    = "B869C82B 35D70E1B 1FF91B28 E37A62EC DC34409B";
 static const int   JCE_512_COUNTER = 123;
@@ -1587,6 +1596,7 @@ static const int   JCE_768_COUNTER = 263;
 
 static const char *JCE_1024_SEED    = "8D515589 4229D5E6 89EE01E6 018A237E 2CAE64CD";
 static const int   JCE_1024_COUNTER = 92;
+#endif
 
 static QByteArray dehex(const QByteArray &hex)
 {
@@ -1622,8 +1632,8 @@ public:
 
 static bool make_dlgroup(const QByteArray &seed, int bits, int counter, DLParams *params)
 {
-    int                                        ret_counter;
-    std::unique_ptr<DSA, decltype(DsaDeleter)> dsa(DSA_new(), DsaDeleter);
+    int                              ret_counter;
+    std::unique_ptr<DSA, DsaDeleter> dsa(DSA_new());
     if (!dsa)
         return false;
 
@@ -1930,7 +1940,7 @@ public:
             return;
 
         // extract the public key into DER format
-        const RSA *    rsa_pkey = EVP_PKEY_get0_RSA(evp.pkey);
+        const RSA     *rsa_pkey = EVP_PKEY_get0_RSA(evp.pkey);
         int            len      = i2d_RSAPublicKey(rsa_pkey, nullptr);
         SecureArray    result(len);
         unsigned char *p = (unsigned char *)result.data();
@@ -1974,7 +1984,7 @@ public:
 
     SecureArray encrypt(const SecureArray &in, EncryptionAlgorithm alg) override
     {
-        const RSA * rsa = EVP_PKEY_get0_RSA(evp.pkey);
+        const RSA  *rsa = EVP_PKEY_get0_RSA(evp.pkey);
         SecureArray buf = in;
         int         max = maximumEncryptSize(alg);
 
@@ -2022,7 +2032,7 @@ public:
 
     bool decrypt(const SecureArray &in, SecureArray *out, EncryptionAlgorithm alg) override
     {
-        const RSA * rsa = EVP_PKEY_get0_RSA(evp.pkey);
+        const RSA  *rsa = EVP_PKEY_get0_RSA(evp.pkey);
         SecureArray result(RSA_size(rsa));
         int         pad;
 
@@ -2071,12 +2081,6 @@ public:
             md = EVP_sha1();
         else if (alg == EMSA3_MD5)
             md = EVP_md5();
-#ifdef HAVE_OPENSSL_MD2
-        else if (alg == EMSA3_MD2)
-            md = EVP_md2();
-#endif
-        else if (alg == EMSA3_RIPEMD160)
-            md = EVP_ripemd160();
         else if (alg == EMSA3_SHA224)
             md = EVP_sha224();
         else if (alg == EMSA3_SHA256)
@@ -2087,7 +2091,15 @@ public:
             md = EVP_sha512();
         else if (alg == EMSA3_Raw) {
             // md = 0
+        } else if (s_legacyProviderAvailable) {
+            if (alg == EMSA3_RIPEMD160)
+                md = EVP_ripemd160();
+#ifdef HAVE_OPENSSL_MD2
+            else if (alg == EMSA3_MD2)
+                md = EVP_md2();
+#endif
         }
+
         evp.startSign(md);
     }
 
@@ -2098,12 +2110,6 @@ public:
             md = EVP_sha1();
         else if (alg == EMSA3_MD5)
             md = EVP_md5();
-#ifdef HAVE_OPENSSL_MD2
-        else if (alg == EMSA3_MD2)
-            md = EVP_md2();
-#endif
-        else if (alg == EMSA3_RIPEMD160)
-            md = EVP_ripemd160();
         else if (alg == EMSA3_SHA224)
             md = EVP_sha224();
         else if (alg == EMSA3_SHA256)
@@ -2114,6 +2120,13 @@ public:
             md = EVP_sha512();
         else if (alg == EMSA3_Raw) {
             // md = 0
+        } else if (s_legacyProviderAvailable) {
+            if (alg == EMSA3_RIPEMD160)
+                md = EVP_ripemd160();
+#ifdef HAVE_OPENSSL_MD2
+            else if (alg == EMSA3_MD2)
+                md = EVP_md2();
+#endif
         }
         evp.startVerify(md);
     }
@@ -2191,7 +2204,7 @@ public:
 
     BigInteger n() const override
     {
-        const RSA *   rsa = EVP_PKEY_get0_RSA(evp.pkey);
+        const RSA    *rsa = EVP_PKEY_get0_RSA(evp.pkey);
         const BIGNUM *bnn;
         RSA_get0_key(rsa, &bnn, nullptr, nullptr);
         return bn2bi(bnn);
@@ -2199,7 +2212,7 @@ public:
 
     BigInteger e() const override
     {
-        const RSA *   rsa = EVP_PKEY_get0_RSA(evp.pkey);
+        const RSA    *rsa = EVP_PKEY_get0_RSA(evp.pkey);
         const BIGNUM *bne;
         RSA_get0_key(rsa, nullptr, &bne, nullptr);
         return bn2bi(bne);
@@ -2207,7 +2220,7 @@ public:
 
     BigInteger p() const override
     {
-        const RSA *   rsa = EVP_PKEY_get0_RSA(evp.pkey);
+        const RSA    *rsa = EVP_PKEY_get0_RSA(evp.pkey);
         const BIGNUM *bnp;
         RSA_get0_factors(rsa, &bnp, nullptr);
         return bn2bi(bnp);
@@ -2215,7 +2228,7 @@ public:
 
     BigInteger q() const override
     {
-        const RSA *   rsa = EVP_PKEY_get0_RSA(evp.pkey);
+        const RSA    *rsa = EVP_PKEY_get0_RSA(evp.pkey);
         const BIGNUM *bnq;
         RSA_get0_factors(rsa, nullptr, &bnq);
         return bn2bi(bnq);
@@ -2223,7 +2236,7 @@ public:
 
     BigInteger d() const override
     {
-        const RSA *   rsa = EVP_PKEY_get0_RSA(evp.pkey);
+        const RSA    *rsa = EVP_PKEY_get0_RSA(evp.pkey);
         const BIGNUM *bnd;
         RSA_get0_key(rsa, nullptr, nullptr, &bnd);
         return bn2bi(bnd);
@@ -2258,7 +2271,7 @@ class DSAKeyMaker : public QThread
     Q_OBJECT
 public:
     DLGroup domain;
-    DSA *   result;
+    DSA    *result;
 
     DSAKeyMaker(const DLGroup &_domain, QObject *parent = nullptr)
         : QThread(parent)
@@ -2276,8 +2289,8 @@ public:
 
     void run() override
     {
-        std::unique_ptr<DSA, decltype(DsaDeleter)> dsa(DSA_new(), DsaDeleter);
-        BIGNUM *pne = bi2bn(domain.p()), *qne = bi2bn(domain.q()), *gne = bi2bn(domain.g());
+        std::unique_ptr<DSA, DsaDeleter> dsa(DSA_new());
+        BIGNUM                          *pne = bi2bn(domain.p()), *qne = bi2bn(domain.q()), *gne = bi2bn(domain.g());
 
         if (!DSA_set0_pqg(dsa.get(), pne, qne, gne)) {
             return;
@@ -2389,7 +2402,7 @@ public:
             return;
 
         // extract the public key into DER format
-        const DSA *    dsa_pkey = EVP_PKEY_get0_DSA(evp.pkey);
+        const DSA     *dsa_pkey = EVP_PKEY_get0_DSA(evp.pkey);
         int            len      = i2d_DSAPublicKey(dsa_pkey, nullptr);
         SecureArray    result(len);
         unsigned char *p = (unsigned char *)result.data();
@@ -2474,7 +2487,7 @@ public:
     {
         evp.reset();
 
-        DSA *   dsa        = DSA_new();
+        DSA    *dsa        = DSA_new();
         BIGNUM *bnp        = bi2bn(domain.p());
         BIGNUM *bnq        = bi2bn(domain.q());
         BIGNUM *bng        = bi2bn(domain.g());
@@ -2495,7 +2508,7 @@ public:
     {
         evp.reset();
 
-        DSA *   dsa       = DSA_new();
+        DSA    *dsa       = DSA_new();
         BIGNUM *bnp       = bi2bn(domain.p());
         BIGNUM *bnq       = bi2bn(domain.q());
         BIGNUM *bng       = bi2bn(domain.g());
@@ -2513,7 +2526,7 @@ public:
 
     DLGroup domain() const override
     {
-        const DSA *   dsa = EVP_PKEY_get0_DSA(evp.pkey);
+        const DSA    *dsa = EVP_PKEY_get0_DSA(evp.pkey);
         const BIGNUM *bnp, *bnq, *bng;
         DSA_get0_pqg(dsa, &bnp, &bnq, &bng);
         return DLGroup(bn2bi(bnp), bn2bi(bnq), bn2bi(bng));
@@ -2521,7 +2534,7 @@ public:
 
     BigInteger y() const override
     {
-        const DSA *   dsa = EVP_PKEY_get0_DSA(evp.pkey);
+        const DSA    *dsa = EVP_PKEY_get0_DSA(evp.pkey);
         const BIGNUM *bnpub_key;
         DSA_get0_key(dsa, &bnpub_key, nullptr);
         return bn2bi(bnpub_key);
@@ -2529,7 +2542,7 @@ public:
 
     BigInteger x() const override
     {
-        const DSA *   dsa = EVP_PKEY_get0_DSA(evp.pkey);
+        const DSA    *dsa = EVP_PKEY_get0_DSA(evp.pkey);
         const BIGNUM *bnpriv_key;
         DSA_get0_key(dsa, nullptr, &bnpriv_key);
         return bn2bi(bnpriv_key);
@@ -2564,7 +2577,7 @@ class DHKeyMaker : public QThread
     Q_OBJECT
 public:
     DLGroup domain;
-    DH *    result;
+    DH     *result;
 
     DHKeyMaker(const DLGroup &_domain, QObject *parent = nullptr)
         : QThread(parent)
@@ -2582,7 +2595,7 @@ public:
 
     void run() override
     {
-        DH *    dh  = DH_new();
+        DH     *dh  = DH_new();
         BIGNUM *bnp = bi2bn(domain.p());
         BIGNUM *bng = bi2bn(domain.g());
         if (!DH_set0_pqg(dh, bnp, nullptr, bng) || !DH_generate_key(dh)) {
@@ -2659,8 +2672,8 @@ public:
         if (!sec)
             return;
 
-        const DH *    orig = EVP_PKEY_get0_DH(evp.pkey);
-        DH *          dh   = DH_new();
+        const DH     *orig = EVP_PKEY_get0_DH(evp.pkey);
+        DH           *dh   = DH_new();
         const BIGNUM *bnp, *bng, *bnpub_key;
         DH_get0_pqg(orig, &bnp, nullptr, &bng);
         DH_get0_key(orig, &bnpub_key, nullptr);
@@ -2682,8 +2695,8 @@ public:
 
     SymmetricKey deriveKey(const PKeyBase &theirs) override
     {
-        const DH *    dh   = EVP_PKEY_get0_DH(evp.pkey);
-        const DH *    them = EVP_PKEY_get0_DH(static_cast<const DHKey *>(&theirs)->evp.pkey);
+        const DH     *dh   = EVP_PKEY_get0_DH(evp.pkey);
+        const DH     *them = EVP_PKEY_get0_DH(static_cast<const DHKey *>(&theirs)->evp.pkey);
         const BIGNUM *bnpub_key;
         DH_get0_key(them, &bnpub_key, nullptr);
 
@@ -2714,7 +2727,7 @@ public:
     {
         evp.reset();
 
-        DH *    dh         = DH_new();
+        DH     *dh         = DH_new();
         BIGNUM *bnp        = bi2bn(domain.p());
         BIGNUM *bng        = bi2bn(domain.g());
         BIGNUM *bnpub_key  = bi2bn(y);
@@ -2734,7 +2747,7 @@ public:
     {
         evp.reset();
 
-        DH *    dh        = DH_new();
+        DH     *dh        = DH_new();
         BIGNUM *bnp       = bi2bn(domain.p());
         BIGNUM *bng       = bi2bn(domain.g());
         BIGNUM *bnpub_key = bi2bn(y);
@@ -2751,7 +2764,7 @@ public:
 
     DLGroup domain() const override
     {
-        const DH *    dh = EVP_PKEY_get0_DH(evp.pkey);
+        const DH     *dh = EVP_PKEY_get0_DH(evp.pkey);
         const BIGNUM *bnp, *bng;
         DH_get0_pqg(dh, &bnp, nullptr, &bng);
         return DLGroup(bn2bi(bnp), bn2bi(bng));
@@ -2759,7 +2772,7 @@ public:
 
     BigInteger y() const override
     {
-        const DH *    dh = EVP_PKEY_get0_DH(evp.pkey);
+        const DH     *dh = EVP_PKEY_get0_DH(evp.pkey);
         const BIGNUM *bnpub_key;
         DH_get0_key(dh, &bnpub_key, nullptr);
         return bn2bi(bnpub_key);
@@ -2767,7 +2780,7 @@ public:
 
     BigInteger x() const override
     {
-        const DH *    dh = EVP_PKEY_get0_DH(evp.pkey);
+        const DH     *dh = EVP_PKEY_get0_DH(evp.pkey);
         const BIGNUM *bnpriv_key;
         DH_get0_key(dh, nullptr, &bnpriv_key);
         return bn2bi(bnpriv_key);
@@ -3042,7 +3055,7 @@ public:
         k = nullptr;
 
         const QByteArray in = s.toLatin1();
-        BIO *            bi = BIO_new(BIO_s_mem());
+        BIO             *bi = BIO_new(BIO_s_mem());
         BIO_write(bi, in.data(), in.size());
         EVP_PKEY *pkey = PEM_read_bio_PUBKEY(bi, nullptr, passphrase_cb, nullptr);
         BIO_free(bi);
@@ -3144,7 +3157,7 @@ public:
         k = nullptr;
 
         const QByteArray in = s.toLatin1();
-        BIO *            bi = BIO_new(BIO_s_mem());
+        BIO             *bi = BIO_new(BIO_s_mem());
         BIO_write(bi, in.data(), in.size());
         EVP_PKEY *pkey;
         if (!passphrase.isEmpty())
@@ -3170,7 +3183,7 @@ public:
 class X509Item
 {
 public:
-    X509 *    cert;
+    X509     *cert;
     X509_REQ *req;
     X509_CRL *crl;
 
@@ -3296,7 +3309,7 @@ public:
         reset();
 
         const QByteArray in = s.toLatin1();
-        BIO *            bi = BIO_new(BIO_s_mem());
+        BIO             *bi = BIO_new(BIO_s_mem());
         BIO_write(bi, in.data(), in.size());
 
         if (t == TypeCert)
@@ -3322,7 +3335,7 @@ public:
 QDateTime ASN1_UTCTIME_QDateTime(const ASN1_UTCTIME *tm, int *isGmt)
 {
     QDateTime qdt;
-    char *    v;
+    char     *v;
     int       gmt = 0;
     int       i;
     int       y = 0, M = 0, d = 0, h = 0, m = 0, s = 0;
@@ -3453,14 +3466,12 @@ public:
         else
             constraints = find_constraints(priv, opts.constraints());*/
 
-        EVP_PKEY *      pk = static_cast<const MyPKeyContext *>(&priv)->get_pkey();
+        EVP_PKEY       *pk = static_cast<const MyPKeyContext *>(&priv)->get_pkey();
         X509_EXTENSION *ex;
 
         const EVP_MD *md;
-        if (priv.key()->type() == PKey::RSA)
-            md = EVP_sha1();
-        else if (priv.key()->type() == PKey::DSA)
-            md = EVP_sha1();
+        if (priv.key()->type() == PKey::RSA || priv.key()->type() == PKey::DSA)
+            md = EVP_sha256();
         else
             return false;
 
@@ -3572,8 +3583,8 @@ public:
     PKeyContext *subjectPublicKey() const override
     {
         MyPKeyContext *kc   = new MyPKeyContext(provider());
-        EVP_PKEY *     pkey = X509_get_pubkey(item.cert);
-        PKeyBase *     kb   = kc->pkeyToBase(pkey, false);
+        EVP_PKEY      *pkey = X509_get_pubkey(item.cert);
+        PKeyBase      *kb   = kc->pkeyToBase(pkey, false);
         kc->setKey(kb);
         return kc;
     }
@@ -3584,12 +3595,12 @@ public:
         STACK_OF(X509) *untrusted_list = sk_X509_new_null();
 
         const MyCertContext *our_cc = this;
-        X509 *               x      = our_cc->item.cert;
+        X509                *x      = our_cc->item.cert;
         X509_up_ref(x);
         sk_X509_push(untrusted_list, x);
 
         const MyCertContext *other_cc = static_cast<const MyCertContext *>(other);
-        X509 *               ox       = other_cc->item.cert;
+        X509                *ox       = other_cc->item.cert;
 
         X509_STORE *store = X509_STORE_new();
 
@@ -3622,26 +3633,26 @@ public:
     // implemented later because it depends on MyCRLContext
     Validity validate(const QList<CertContext *> &trusted,
                       const QList<CertContext *> &untrusted,
-                      const QList<CRLContext *> & crls,
+                      const QList<CRLContext *>  &crls,
                       UsageMode                   u,
                       ValidateFlags               vf) const override;
 
     Validity validate_chain(const QList<CertContext *> &chain,
                             const QList<CertContext *> &trusted,
-                            const QList<CRLContext *> & crls,
+                            const QList<CRLContext *>  &crls,
                             UsageMode                   u,
                             ValidateFlags               vf) const override;
 
     void make_props()
     {
-        X509 *           x = item.cert;
+        X509            *x = item.cert;
         CertContextProps p;
 
         p.version = X509_get_version(x);
 
         ASN1_INTEGER *ai = X509_get_serialNumber(x);
         if (ai) {
-            char *  rep = i2s_ASN1_INTEGER(nullptr, ai);
+            char   *rep = i2s_ASN1_INTEGER(nullptr, ai);
             QString str = QString::fromLatin1(rep);
             OPENSSL_free(rep);
             p.serial.fromString(str);
@@ -3719,11 +3730,11 @@ public:
             break;
 #ifdef HAVE_OPENSSL_MD2
         case NID_md2WithRSAEncryption:
-            p.sigalgo = QCA::EMSA3_MD2;
+            p.sigalgo = s_legacyProviderAvailable ? QCA::EMSA3_MD2 : QCA::SignatureUnknown;
             break;
 #endif
         case NID_ripemd160WithRSA:
-            p.sigalgo = QCA::EMSA3_RIPEMD160;
+            p.sigalgo = s_legacyProviderAvailable ? QCA::EMSA3_RIPEMD160 : QCA::SignatureUnknown;
             break;
         case NID_dsaWithSHA1:
             p.sigalgo = QCA::EMSA1_SHA1;
@@ -3848,13 +3859,13 @@ public:
 
     CertContext *signRequest(const CSRContext &req, const QDateTime &notValidAfter) const override
     {
-        MyCertContext *         cert  = nullptr;
-        const EVP_MD *          md    = nullptr;
-        X509 *                  x     = nullptr;
+        MyCertContext          *cert  = nullptr;
+        const EVP_MD           *md    = nullptr;
+        X509                   *x     = nullptr;
         const CertContextProps &props = *req.props();
         CertificateOptions      subjectOpts;
-        X509_NAME *             subjectName = nullptr;
-        X509_EXTENSION *        ex          = nullptr;
+        X509_NAME              *subjectName = nullptr;
+        X509_EXTENSION         *ex          = nullptr;
 
         if (privateKey->key()->type() == PKey::RSA)
             md = EVP_sha1();
@@ -4035,7 +4046,7 @@ public:
         else
             constraints = find_constraints(priv, opts.constraints());*/
 
-        EVP_PKEY *      pk = static_cast<const MyPKeyContext *>(&priv)->get_pkey();
+        EVP_PKEY       *pk = static_cast<const MyPKeyContext *>(&priv)->get_pkey();
         X509_EXTENSION *ex;
 
         const EVP_MD *md;
@@ -4128,8 +4139,8 @@ public:
     PKeyContext *subjectPublicKey() const override // does a new
     {
         MyPKeyContext *kc   = new MyPKeyContext(provider());
-        EVP_PKEY *     pkey = X509_REQ_get_pubkey(item.req);
-        PKeyBase *     kb   = kc->pkeyToBase(pkey, false);
+        EVP_PKEY      *pkey = X509_REQ_get_pubkey(item.req);
+        PKeyBase      *kb   = kc->pkeyToBase(pkey, false);
         kc->setKey(kb);
         return kc;
     }
@@ -4147,7 +4158,7 @@ public:
 
     void make_props()
     {
-        X509_REQ *       x = item.req;
+        X509_REQ        *x = item.req;
         CertContextProps p;
 
         // TODO: QString challenge;
@@ -4217,11 +4228,11 @@ public:
             break;
 #ifdef HAVE_OPENSSL_MD2
         case NID_md2WithRSAEncryption:
-            p.sigalgo = QCA::EMSA3_MD2;
+            p.sigalgo = s_legacyProviderAvailable ? QCA::EMSA3_MD2 : QCA::SignatureUnknown;
             break;
 #endif
         case NID_ripemd160WithRSA:
-            p.sigalgo = QCA::EMSA3_RIPEMD160;
+            p.sigalgo = s_legacyProviderAvailable ? QCA::EMSA3_RIPEMD160 : QCA::SignatureUnknown;
             break;
         case NID_dsaWithSHA1:
             p.sigalgo = QCA::EMSA1_SHA1;
@@ -4346,7 +4357,7 @@ public:
         STACK_OF(X509_REVOKED) *revokeStack = X509_CRL_get_REVOKED(x);
 
         for (int i = 0; i < sk_X509_REVOKED_num(revokeStack); ++i) {
-            X509_REVOKED *        rev    = sk_X509_REVOKED_value(revokeStack, i);
+            X509_REVOKED         *rev    = sk_X509_REVOKED_value(revokeStack, i);
             BigInteger            serial = bn2bi_free(ASN1_INTEGER_to_BN(X509_REVOKED_get0_serialNumber(rev), nullptr));
             QDateTime             time   = ASN1_UTCTIME_QDateTime(X509_REVOKED_get0_revocationDate(rev), nullptr);
             QCA::CRLEntry::Reason reason = QCA::CRLEntry::Unspecified;
@@ -4415,11 +4426,11 @@ public:
             break;
 #ifdef HAVE_OPENSSL_MD2
         case NID_md2WithRSAEncryption:
-            p.sigalgo = QCA::EMSA3_MD2;
+            p.sigalgo = s_legacyProviderAvailable ? QCA::EMSA3_MD2 : QCA::SignatureUnknown;
             break;
 #endif
         case NID_ripemd160WithRSA:
-            p.sigalgo = QCA::EMSA3_RIPEMD160;
+            p.sigalgo = s_legacyProviderAvailable ? QCA::EMSA3_RIPEMD160 : QCA::SignatureUnknown;
             break;
         case NID_dsaWithSHA1:
             p.sigalgo = QCA::EMSA1_SHA1;
@@ -4577,7 +4588,7 @@ static bool usage_check(const MyCertContext &cc, UsageMode u)
 
 Validity MyCertContext::validate(const QList<CertContext *> &trusted,
                                  const QList<CertContext *> &untrusted,
-                                 const QList<CRLContext *> & crls,
+                                 const QList<CRLContext *>  &crls,
                                  UsageMode                   u,
                                  ValidateFlags               vf) const
 {
@@ -4591,25 +4602,25 @@ Validity MyCertContext::validate(const QList<CertContext *> &trusted,
     int n;
     for (n = 0; n < trusted.count(); ++n) {
         const MyCertContext *cc = static_cast<const MyCertContext *>(trusted[n]);
-        X509 *               x  = cc->item.cert;
+        X509                *x  = cc->item.cert;
         X509_up_ref(x);
         sk_X509_push(trusted_list, x);
     }
     for (n = 0; n < untrusted.count(); ++n) {
         const MyCertContext *cc = static_cast<const MyCertContext *>(untrusted[n]);
-        X509 *               x  = cc->item.cert;
+        X509                *x  = cc->item.cert;
         X509_up_ref(x);
         sk_X509_push(untrusted_list, x);
     }
     for (n = 0; n < crls.count(); ++n) {
         const MyCRLContext *cc = static_cast<const MyCRLContext *>(crls[n]);
-        X509_CRL *          x  = cc->item.crl;
+        X509_CRL           *x  = cc->item.crl;
         X509_CRL_up_ref(x);
         crl_list.append(x);
     }
 
     const MyCertContext *cc = this;
-    X509 *               x  = cc->item.cert;
+    X509                *x  = cc->item.cert;
 
     // verification happens through a store "context"
     X509_STORE_CTX *ctx = X509_STORE_CTX_new();
@@ -4651,7 +4662,7 @@ Validity MyCertContext::validate(const QList<CertContext *> &trusted,
 
 Validity MyCertContext::validate_chain(const QList<CertContext *> &chain,
                                        const QList<CertContext *> &trusted,
-                                       const QList<CRLContext *> & crls,
+                                       const QList<CRLContext *>  &crls,
                                        UsageMode                   u,
                                        ValidateFlags               vf) const
 {
@@ -4665,25 +4676,25 @@ Validity MyCertContext::validate_chain(const QList<CertContext *> &chain,
     int n;
     for (n = 0; n < trusted.count(); ++n) {
         const MyCertContext *cc = static_cast<const MyCertContext *>(trusted[n]);
-        X509 *               x  = cc->item.cert;
+        X509                *x  = cc->item.cert;
         X509_up_ref(x);
         sk_X509_push(trusted_list, x);
     }
     for (n = 1; n < chain.count(); ++n) {
         const MyCertContext *cc = static_cast<const MyCertContext *>(chain[n]);
-        X509 *               x  = cc->item.cert;
+        X509                *x  = cc->item.cert;
         X509_up_ref(x);
         sk_X509_push(untrusted_list, x);
     }
     for (n = 0; n < crls.count(); ++n) {
         const MyCRLContext *cc = static_cast<const MyCRLContext *>(crls[n]);
-        X509_CRL *          x  = cc->item.crl;
+        X509_CRL           *x  = cc->item.crl;
         X509_CRL_up_ref(x);
         crl_list.append(x);
     }
 
     const MyCertContext *cc = static_cast<const MyCertContext *>(chain[0]);
-    X509 *               x  = cc->item.cert;
+    X509                *x  = cc->item.cert;
 
     // verification happens through a store "context"
     X509_STORE_CTX *ctx = X509_STORE_CTX_new();
@@ -4757,10 +4768,10 @@ public:
         return nullptr;
     }
 
-    QByteArray toPKCS12(const QString &                   name,
+    QByteArray toPKCS12(const QString                    &name,
                         const QList<const CertContext *> &chain,
-                        const PKeyContext &               priv,
-                        const SecureArray &               passphrase) const override
+                        const PKeyContext                &priv,
+                        const SecureArray                &passphrase) const override
     {
         if (chain.count() < 1)
             return QByteArray();
@@ -4775,7 +4786,7 @@ public:
             }
         }
         const MyPKeyContext &pk  = static_cast<const MyPKeyContext &>(priv);
-        PKCS12 *             p12 = PKCS12_create(
+        PKCS12              *p12 = PKCS12_create(
             (char *)passphrase.data(), (char *)name.toLatin1().data(), pk.get_pkey(), cert, ca, 0, 0, 0, 0, 0);
         sk_X509_pop_free(ca, X509_free);
 
@@ -4788,11 +4799,11 @@ public:
         return out;
     }
 
-    ConvertResult fromPKCS12(const QByteArray &    in,
-                             const SecureArray &   passphrase,
-                             QString *             name,
+    ConvertResult fromPKCS12(const QByteArray     &in,
+                             const SecureArray    &passphrase,
+                             QString              *name,
                              QList<CertContext *> *chain,
-                             PKeyContext **        priv) const override
+                             PKeyContext         **priv) const override
     {
         BIO *bi = BIO_new(BIO_s_mem());
         BIO_write(bi, in.data(), in.size());
@@ -4802,7 +4813,7 @@ public:
             return ErrorDecode;
 
         EVP_PKEY *pkey;
-        X509 *    cert;
+        X509     *cert;
         STACK_OF(X509) *ca = nullptr;
         if (!PKCS12_parse(p12, passphrase.data(), &pkey, &cert, &ca)) {
             PKCS12_free(p12);
@@ -4826,7 +4837,7 @@ public:
         *name           = QString::fromLatin1(aliasData, aliasLength);
 
         MyPKeyContext *pk = new MyPKeyContext(provider());
-        PKeyBase *     k  = pk->pkeyToBase(pkey, true); // does an EVP_PKEY_free()
+        PKeyBase      *k  = pk->pkeyToBase(pkey, true); // does an EVP_PKEY_free()
         if (!k) {
             delete pk;
             if (cert)
@@ -4913,10 +4924,10 @@ public:
     int        result_encoded;
     QByteArray result_plain;
 
-    SSL *             ssl;
+    SSL              *ssl;
     const SSL_METHOD *method;
-    SSL_CTX *         context;
-    BIO *             rbio, *wbio;
+    SSL_CTX          *context;
+    BIO              *rbio, *wbio;
     Validity          vr;
     bool              v_eof;
 
@@ -5440,19 +5451,19 @@ public:
 
         // setup the cert store
         {
-            X509_STORE *             store     = SSL_CTX_get_cert_store(context);
+            X509_STORE              *store     = SSL_CTX_get_cert_store(context);
             const QList<Certificate> cert_list = trusted.certificates();
             const QList<CRL>         crl_list  = trusted.crls();
             int                      n;
             for (n = 0; n < cert_list.count(); ++n) {
                 const MyCertContext *cc = static_cast<const MyCertContext *>(cert_list[n].context());
-                X509 *               x  = cc->item.cert;
+                X509                *x  = cc->item.cert;
                 // CRYPTO_add(&x->references, 1, CRYPTO_LOCK_X509);
                 X509_STORE_add_cert(store, x);
             }
             for (n = 0; n < crl_list.count(); ++n) {
                 const MyCRLContext *cc = static_cast<const MyCRLContext *>(crl_list[n].context());
-                X509_CRL *          x  = cc->item.crl;
+                X509_CRL           *x  = cc->item.crl;
                 // CRYPTO_add(&x->references, 1, CRYPTO_LOCK_X509_CRL);
                 X509_STORE_add_crl(store, x);
             }
@@ -5499,7 +5510,7 @@ public:
 
                 // make a new private key object to hold it
                 MyPKeyContext *pk = new MyPKeyContext(provider());
-                PKeyBase *     k  = pk->pkeyToBase(pkey, true); // does an EVP_PKEY_free()
+                PKeyBase      *k  = pk->pkeyToBase(pkey, true); // does an EVP_PKEY_free()
                 pk->k             = k;
                 nkey.change(pk);
             }
@@ -5537,7 +5548,7 @@ public:
             CertificateChain chain;
 
             if (serv) {
-                X509 *         x  = SSL_get_peer_certificate(ssl);
+                X509          *x  = SSL_get_peer_certificate(ssl);
                 MyCertContext *cc = new MyCertContext(provider());
                 cc->fromX509(x);
                 Certificate cert;
@@ -5546,7 +5557,7 @@ public:
             }
 
             for (int n = 0; n < sk_X509_num(x_chain); ++n) {
-                X509 *         x  = sk_X509_value(x_chain, n);
+                X509          *x  = sk_X509_value(x_chain, n);
                 MyCertContext *cc = new MyCertContext(provider());
                 cc->fromX509(x);
                 Certificate cert;
@@ -5707,9 +5718,9 @@ public:
     Certificate             cert;
     PrivateKey              key;
     STACK_OF(X509) * other_certs;
-    BIO *      bi;
+    BIO       *bi;
     int        flags;
-    PKCS7 *    p7;
+    PKCS7     *p7;
     bool       ok;
     QByteArray out, sig;
 
@@ -5724,8 +5735,8 @@ protected:
     {
         MyCertContext *cc = static_cast<MyCertContext *>(cert.context());
         MyPKeyContext *kc = static_cast<MyPKeyContext *>(key.context());
-        X509 *         cx = cc->item.cert;
-        EVP_PKEY *     kx = kc->get_pkey();
+        X509          *cx = cc->item.cert;
+        EVP_PKEY      *kx = kc->get_pkey();
 
         p7 = PKCS7_sign(cx, kx, other_certs, bi, flags);
 
@@ -5765,7 +5776,7 @@ class MyMessageContext : public MessageContext
 {
     Q_OBJECT
 public:
-    CMSContext *            cms;
+    CMSContext             *cms;
     SecureMessageKey        signer;
     SecureMessageKeyList    to;
     SecureMessage::SignMode signMode;
@@ -5901,7 +5912,7 @@ public:
 
                 // make a new private key object to hold it
                 MyPKeyContext *pk = new MyPKeyContext(provider());
-                PKeyBase *     k  = pk->pkeyToBase(pkey, true); // does an EVP_PKEY_free()
+                PKeyBase      *k  = pk->pkeyToBase(pkey, true); // does an EVP_PKEY_free()
                 pk->k             = k;
                 key.change(pk);
             }
@@ -5965,7 +5976,7 @@ public:
             Certificate target = to.first().x509CertificateChain().primary();
 
             STACK_OF(X509) * other_certs;
-            BIO *  bi;
+            BIO   *bi;
             int    flags;
             PKCS7 *p7;
 
@@ -6075,19 +6086,19 @@ public:
 
             signerChain = chain;
 
-            X509_STORE *             store     = X509_STORE_new();
+            X509_STORE              *store     = X509_STORE_new();
             const QList<Certificate> cert_list = cms->trustedCerts.certificates();
             QList<CRL>               crl_list  = cms->trustedCerts.crls();
             for (int n = 0; n < cert_list.count(); ++n) {
                 // printf("trusted: [%s]\n", qPrintable(cert_list[n].commonName()));
                 const MyCertContext *cc = static_cast<const MyCertContext *>(cert_list[n].context());
-                X509 *               x  = cc->item.cert;
+                X509                *x  = cc->item.cert;
                 // CRYPTO_add(&x->references, 1, CRYPTO_LOCK_X509);
                 X509_STORE_add_cert(store, x);
             }
             for (int n = 0; n < crl_list.count(); ++n) {
                 const MyCRLContext *cc = static_cast<const MyCRLContext *>(crl_list[n].context());
-                X509_CRL *          x  = cc->item.crl;
+                X509_CRL           *x  = cc->item.crl;
                 // CRYPTO_add(&x->references, 1, CRYPTO_LOCK_X509_CRL);
                 X509_STORE_add_crl(store, x);
             }
@@ -6095,7 +6106,7 @@ public:
             crl_list = untrusted_crls;
             for (int n = 0; n < crl_list.count(); ++n) {
                 const MyCRLContext *cc = static_cast<const MyCRLContext *>(crl_list[n].context());
-                X509_CRL *          x  = cc->item.crl;
+                X509_CRL           *x  = cc->item.crl;
                 // CRYPTO_add(&x->references, 1, CRYPTO_LOCK_X509_CRL);
                 X509_STORE_add_crl(store, x);
             }
@@ -6131,7 +6142,7 @@ public:
                 MyCertContext *cc = static_cast<MyCertContext *>(cert.context());
                 MyPKeyContext *kc = static_cast<MyPKeyContext *>(key.context());
 
-                X509 *    cx = cc->item.cert;
+                X509     *cx = cc->item.cert;
                 EVP_PKEY *kx = kc->get_pkey();
 
                 BIO *bi = BIO_new(BIO_s_mem());
@@ -6392,28 +6403,30 @@ public:
     // Change cipher names
     KeyLength keyLength() const override
     {
-        if (m_type.left(4) == QLatin1String("des-")) {
-            return KeyLength(8, 8, 1);
-        } else if (m_type.left(6) == QLatin1String("aes128")) {
+        if (s_legacyProviderAvailable) {
+            if (m_type.left(4) == QLatin1String("des-")) {
+                return KeyLength(8, 8, 1);
+            } else if (m_type.left(5) == QLatin1String("cast5")) {
+                return KeyLength(5, 16, 1);
+            } else if (m_type.left(8) == QLatin1String("blowfish")) {
+                // Don't know - TODO
+                return KeyLength(1, 32, 1);
+            }
+        }
+        if (m_type.left(6) == QLatin1String("aes128")) {
             return KeyLength(16, 16, 1);
         } else if (m_type.left(6) == QLatin1String("aes192")) {
             return KeyLength(24, 24, 1);
         } else if (m_type.left(6) == QLatin1String("aes256")) {
             return KeyLength(32, 32, 1);
-        } else if (m_type.left(5) == QLatin1String("cast5")) {
-            return KeyLength(5, 16, 1);
-        } else if (m_type.left(8) == QLatin1String("blowfish")) {
-            // Don't know - TODO
-            return KeyLength(1, 32, 1);
         } else if (m_type.left(9) == QLatin1String("tripledes")) {
             return KeyLength(16, 24, 1);
-        } else {
-            return KeyLength(0, 1, 1);
         }
+        return KeyLength(0, 1, 1);
     }
 
 protected:
-    EVP_CIPHER_CTX *  m_context;
+    EVP_CIPHER_CTX   *m_context;
     const EVP_CIPHER *m_cryptoAlgorithm;
     Direction         m_direction;
     int               m_pad;
@@ -6428,11 +6441,6 @@ static QStringList all_hash_types()
 #ifdef HAVE_OPENSSL_SHA0
     list += QStringLiteral("sha0");
 #endif
-    list += QStringLiteral("ripemd160");
-#ifdef HAVE_OPENSSL_MD2
-    list += QStringLiteral("md2");
-#endif
-    list += QStringLiteral("md4");
     list += QStringLiteral("md5");
 #ifdef SHA224_DIGEST_LENGTH
     list += QStringLiteral("sha224");
@@ -6446,9 +6454,17 @@ static QStringList all_hash_types()
 #ifdef SHA512_DIGEST_LENGTH
     list += QStringLiteral("sha512");
 #endif
-#ifdef OBJ_whirlpool
-    list += QStringLiteral("whirlpool");
+    if (s_legacyProviderAvailable) {
+        list += QStringLiteral("ripemd160");
+#ifdef HAVE_OPENSSL_MD2
+        list += QStringLiteral("md2");
 #endif
+        list += QStringLiteral("md4");
+#ifdef OBJ_whirlpool
+        list += QStringLiteral("whirlpool");
+#endif
+    }
+
     return list;
 }
 
@@ -6497,24 +6513,28 @@ static QStringList all_cipher_types()
 #ifdef HAVE_OPENSSL_AES_CCM
     list += QStringLiteral("aes256-ccm");
 #endif
-    list += QStringLiteral("blowfish-ecb");
-    list += QStringLiteral("blowfish-cbc-pkcs7");
-    list += QStringLiteral("blowfish-cbc");
-    list += QStringLiteral("blowfish-cfb");
-    list += QStringLiteral("blowfish-ofb");
     list += QStringLiteral("tripledes-ecb");
     list += QStringLiteral("tripledes-cbc");
-    list += QStringLiteral("des-ecb");
-    list += QStringLiteral("des-ecb-pkcs7");
-    list += QStringLiteral("des-cbc");
-    list += QStringLiteral("des-cbc-pkcs7");
-    list += QStringLiteral("des-cfb");
-    list += QStringLiteral("des-ofb");
-    list += QStringLiteral("cast5-ecb");
-    list += QStringLiteral("cast5-cbc");
-    list += QStringLiteral("cast5-cbc-pkcs7");
-    list += QStringLiteral("cast5-cfb");
-    list += QStringLiteral("cast5-ofb");
+    if (s_legacyProviderAvailable) {
+        list += QStringLiteral("blowfish-ecb");
+        list += QStringLiteral("blowfish-cbc-pkcs7");
+        list += QStringLiteral("blowfish-cbc");
+        list += QStringLiteral("blowfish-cfb");
+        list += QStringLiteral("blowfish-ofb");
+        list += QStringLiteral("des-ecb");
+        list += QStringLiteral("des-ecb-pkcs7");
+        list += QStringLiteral("des-cbc");
+        list += QStringLiteral("des-cbc-pkcs7");
+        list += QStringLiteral("des-cfb");
+        list += QStringLiteral("des-ofb");
+#ifndef OPENSSL_NO_CAST
+        list += QStringLiteral("cast5-ecb");
+        list += QStringLiteral("cast5-cbc");
+        list += QStringLiteral("cast5-cbc-pkcs7");
+        list += QStringLiteral("cast5-cfb");
+        list += QStringLiteral("cast5-ofb");
+#endif
+    }
     return list;
 }
 
@@ -6535,7 +6555,9 @@ static QStringList all_mac_types()
 #ifdef SHA512_DIGEST_LENGTH
     list += QStringLiteral("hmac(sha512)");
 #endif
-    list += QStringLiteral("hmac(ripemd160)");
+    if (s_legacyProviderAvailable) {
+        list += QStringLiteral("hmac(ripemd160)");
+    }
     return list;
 }
 
@@ -6609,28 +6631,21 @@ public:
     opensslProvider()
     {
         openssl_initted = false;
+// OPENSSL_VERSION_MAJOR is only defined in openssl3
+#ifdef OPENSSL_VERSION_MAJOR
+        /* Load the legacy providers into the default (NULL) library context */
+        if (OSSL_PROVIDER_try_load(nullptr, "legacy", 1)) {
+            s_legacyProviderAvailable = true;
+        }
+#else
+        s_legacyProviderAvailable = true;
+#endif
     }
 
     void init() override
     {
         OpenSSL_add_all_algorithms();
         ERR_load_crypto_strings();
-
-// OPENSSL_VERSION_MAJOR is only defined in openssl3
-#ifdef OPENSSL_VERSION_MAJOR
-        /* Load Multiple providers into the default (NULL) library context */
-        OSSL_PROVIDER *legacy = OSSL_PROVIDER_load(NULL, "legacy");
-        if (legacy == NULL) {
-            printf("Failed to load Legacy provider\n");
-            exit(EXIT_FAILURE);
-        }
-        OSSL_PROVIDER *deflt = OSSL_PROVIDER_load(NULL, "default");
-        if (deflt == NULL) {
-            printf("Failed to load Default provider\n");
-            OSSL_PROVIDER_unload(legacy);
-            exit(EXIT_FAILURE);
-        }
-#endif
 
         // seed the RNG if it's not seeded yet
         if (RAND_status() == 0) {
@@ -6682,10 +6697,13 @@ public:
         list += all_hash_types();
         list += all_mac_types();
         list += all_cipher_types();
+        if (s_legacyProviderAvailable) {
 #ifdef HAVE_OPENSSL_MD2
-        list += QStringLiteral("pbkdf1(md2)");
+            list += QStringLiteral("pbkdf1(md2)");
 #endif
-        list += QStringLiteral("pbkdf1(sha1)");
+            list += QStringLiteral("pbkdf1(sha1)");
+        }
+        list += QStringLiteral("pkcs12");
         list += QStringLiteral("pbkdf2(sha1)");
         list += QStringLiteral("hkdf(sha256)");
         list += QStringLiteral("pkey");
@@ -6697,7 +6715,6 @@ public:
         list += QStringLiteral("csr");
         list += QStringLiteral("crl");
         list += QStringLiteral("certcollection");
-        list += QStringLiteral("pkcs12");
         list += QStringLiteral("tls");
         list += QStringLiteral("cms");
         list += QStringLiteral("ca");
@@ -6718,14 +6735,6 @@ public:
         else if (type == QLatin1String("sha0"))
             return new opensslHashContext(EVP_sha(), this, type);
 #endif
-        else if (type == QLatin1String("ripemd160"))
-            return new opensslHashContext(EVP_ripemd160(), this, type);
-#ifdef HAVE_OPENSSL_MD2
-        else if (type == QLatin1String("md2"))
-            return new opensslHashContext(EVP_md2(), this, type);
-#endif
-        else if (type == QLatin1String("md4"))
-            return new opensslHashContext(EVP_md4(), this, type);
         else if (type == QLatin1String("md5"))
             return new opensslHashContext(EVP_md5(), this, type);
 #ifdef SHA224_DIGEST_LENGTH
@@ -6743,16 +6752,6 @@ public:
 #ifdef SHA512_DIGEST_LENGTH
         else if (type == QLatin1String("sha512"))
             return new opensslHashContext(EVP_sha512(), this, type);
-#endif
-#ifdef OBJ_whirlpool
-        else if (type == QLatin1String("whirlpool"))
-            return new opensslHashContext(EVP_whirlpool(), this, type);
-#endif
-        else if (type == QLatin1String("pbkdf1(sha1)"))
-            return new opensslPbkdf1Context(EVP_sha1(), this, type);
-#ifdef HAVE_OPENSSL_MD2
-        else if (type == QLatin1String("pbkdf1(md2)"))
-            return new opensslPbkdf1Context(EVP_md2(), this, type);
 #endif
         else if (type == QLatin1String("pbkdf2(sha1)"))
             return new opensslPbkdf2Context(this, type);
@@ -6778,8 +6777,6 @@ public:
         else if (type == QLatin1String("hmac(sha512)"))
             return new opensslHMACContext(EVP_sha512(), this, type);
 #endif
-        else if (type == QLatin1String("hmac(ripemd160)"))
-            return new opensslHMACContext(EVP_ripemd160(), this, type);
         else if (type == QLatin1String("aes128-ecb"))
             return new opensslCipherContext(EVP_aes_128_ecb(), 0, this, type);
         else if (type == QLatin1String("aes128-cfb"))
@@ -6846,42 +6843,6 @@ public:
         else if (type == QLatin1String("aes256-ccm"))
             return new opensslCipherContext(EVP_aes_256_ccm(), 0, this, type);
 #endif
-        else if (type == QLatin1String("blowfish-ecb"))
-            return new opensslCipherContext(EVP_bf_ecb(), 0, this, type);
-        else if (type == QLatin1String("blowfish-cfb"))
-            return new opensslCipherContext(EVP_bf_cfb(), 0, this, type);
-        else if (type == QLatin1String("blowfish-ofb"))
-            return new opensslCipherContext(EVP_bf_ofb(), 0, this, type);
-        else if (type == QLatin1String("blowfish-cbc"))
-            return new opensslCipherContext(EVP_bf_cbc(), 0, this, type);
-        else if (type == QLatin1String("blowfish-cbc-pkcs7"))
-            return new opensslCipherContext(EVP_bf_cbc(), 1, this, type);
-        else if (type == QLatin1String("tripledes-ecb"))
-            return new opensslCipherContext(EVP_des_ede3(), 0, this, type);
-        else if (type == QLatin1String("tripledes-cbc"))
-            return new opensslCipherContext(EVP_des_ede3_cbc(), 0, this, type);
-        else if (type == QLatin1String("des-ecb"))
-            return new opensslCipherContext(EVP_des_ecb(), 0, this, type);
-        else if (type == QLatin1String("des-ecb-pkcs7"))
-            return new opensslCipherContext(EVP_des_ecb(), 1, this, type);
-        else if (type == QLatin1String("des-cbc"))
-            return new opensslCipherContext(EVP_des_cbc(), 0, this, type);
-        else if (type == QLatin1String("des-cbc-pkcs7"))
-            return new opensslCipherContext(EVP_des_cbc(), 1, this, type);
-        else if (type == QLatin1String("des-cfb"))
-            return new opensslCipherContext(EVP_des_cfb(), 0, this, type);
-        else if (type == QLatin1String("des-ofb"))
-            return new opensslCipherContext(EVP_des_ofb(), 0, this, type);
-        else if (type == QLatin1String("cast5-ecb"))
-            return new opensslCipherContext(EVP_cast5_ecb(), 0, this, type);
-        else if (type == QLatin1String("cast5-cbc"))
-            return new opensslCipherContext(EVP_cast5_cbc(), 0, this, type);
-        else if (type == QLatin1String("cast5-cbc-pkcs7"))
-            return new opensslCipherContext(EVP_cast5_cbc(), 1, this, type);
-        else if (type == QLatin1String("cast5-cfb"))
-            return new opensslCipherContext(EVP_cast5_cfb(), 0, this, type);
-        else if (type == QLatin1String("cast5-ofb"))
-            return new opensslCipherContext(EVP_cast5_ofb(), 0, this, type);
         else if (type == QLatin1String("pkey"))
             return new MyPKeyContext(this);
         else if (type == QLatin1String("dlgroup"))
@@ -6900,14 +6861,74 @@ public:
             return new MyCRLContext(this);
         else if (type == QLatin1String("certcollection"))
             return new MyCertCollectionContext(this);
-        else if (type == QLatin1String("pkcs12"))
-            return new MyPKCS12Context(this);
         else if (type == QLatin1String("tls"))
             return new MyTLSContext(this);
         else if (type == QLatin1String("cms"))
             return new CMSContext(this);
         else if (type == QLatin1String("ca"))
             return new MyCAContext(this);
+        else if (type == QLatin1String("tripledes-ecb"))
+            return new opensslCipherContext(EVP_des_ede3(), 0, this, type);
+        else if (type == QLatin1String("tripledes-cbc"))
+            return new opensslCipherContext(EVP_des_ede3_cbc(), 0, this, type);
+        else if (type == QLatin1String("pkcs12"))
+            return new MyPKCS12Context(this);
+
+        else if (s_legacyProviderAvailable) {
+            if (type == QLatin1String("blowfish-ecb"))
+                return new opensslCipherContext(EVP_bf_ecb(), 0, this, type);
+            else if (type == QLatin1String("blowfish-cfb"))
+                return new opensslCipherContext(EVP_bf_cfb(), 0, this, type);
+            else if (type == QLatin1String("blowfish-ofb"))
+                return new opensslCipherContext(EVP_bf_ofb(), 0, this, type);
+            else if (type == QLatin1String("blowfish-cbc"))
+                return new opensslCipherContext(EVP_bf_cbc(), 0, this, type);
+            else if (type == QLatin1String("blowfish-cbc-pkcs7"))
+                return new opensslCipherContext(EVP_bf_cbc(), 1, this, type);
+            else if (type == QLatin1String("des-ecb"))
+                return new opensslCipherContext(EVP_des_ecb(), 0, this, type);
+            else if (type == QLatin1String("des-ecb-pkcs7"))
+                return new opensslCipherContext(EVP_des_ecb(), 1, this, type);
+            else if (type == QLatin1String("des-cbc"))
+                return new opensslCipherContext(EVP_des_cbc(), 0, this, type);
+            else if (type == QLatin1String("des-cbc-pkcs7"))
+                return new opensslCipherContext(EVP_des_cbc(), 1, this, type);
+            else if (type == QLatin1String("des-cfb"))
+                return new opensslCipherContext(EVP_des_cfb(), 0, this, type);
+            else if (type == QLatin1String("des-ofb"))
+                return new opensslCipherContext(EVP_des_ofb(), 0, this, type);
+#ifndef OPENSSL_NO_CAST
+            else if (type == QLatin1String("cast5-ecb"))
+                return new opensslCipherContext(EVP_cast5_ecb(), 0, this, type);
+            else if (type == QLatin1String("cast5-cbc"))
+                return new opensslCipherContext(EVP_cast5_cbc(), 0, this, type);
+            else if (type == QLatin1String("cast5-cbc-pkcs7"))
+                return new opensslCipherContext(EVP_cast5_cbc(), 1, this, type);
+            else if (type == QLatin1String("cast5-cfb"))
+                return new opensslCipherContext(EVP_cast5_cfb(), 0, this, type);
+            else if (type == QLatin1String("cast5-ofb"))
+                return new opensslCipherContext(EVP_cast5_ofb(), 0, this, type);
+#endif
+            else if (type == QLatin1String("hmac(ripemd160)"))
+                return new opensslHMACContext(EVP_ripemd160(), this, type);
+            else if (type == QLatin1String("ripemd160"))
+                return new opensslHashContext(EVP_ripemd160(), this, type);
+#ifdef HAVE_OPENSSL_MD2
+            else if (type == QLatin1String("md2"))
+                return new opensslHashContext(EVP_md2(), this, type);
+            else if (type == QLatin1String("pbkdf1(md2)"))
+                return new opensslPbkdf1Context(EVP_md2(), this, type);
+#endif
+            else if (type == QLatin1String("md4"))
+                return new opensslHashContext(EVP_md4(), this, type);
+#ifdef OBJ_whirlpool
+            else if (type == QLatin1String("whirlpool"))
+                return new opensslHashContext(EVP_whirlpool(), this, type);
+#endif
+            else if (type == QLatin1String("pbkdf1(sha1)"))
+                return new opensslPbkdf1Context(EVP_sha1(), this, type);
+        }
+
         return nullptr;
     }
 };

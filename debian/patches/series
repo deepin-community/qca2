@@ -1,2 +1,2 @@
-define_qca_export.diff
 pipeunittest_more_wait.diff
+disable_pgpunittest.diff

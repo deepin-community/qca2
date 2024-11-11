@@ -27,14 +27,14 @@
 #include <botan/block_cipher.h>
 #include <botan/filters.h>
 #include <botan/hash.h>
-#include <botan/hkdf.h>
-#include <botan/hmac.h>
+#include <botan/kdf.h>
 #include <botan/pbkdf.h>
 #include <botan/stream_cipher.h>
 #include <botan/version.h>
 
 #include <cstdlib>
 #include <iostream>
+#include <utility>
 
 //-----------------------------------------------------------
 class botanRandomContext : public QCA::RandomContext
@@ -133,17 +133,19 @@ private:
 static QString qcaHmacToBotanHmac(const QString &type)
 {
     if (type == QLatin1String("hmac(md5)"))
-        return QStringLiteral("MD5");
+        return QStringLiteral("HMAC(MD5)");
     else if (type == QLatin1String("hmac(sha1)"))
-        return QStringLiteral("SHA-1");
+        return QStringLiteral("HMAC(SHA-1)");
+    else if (type == QLatin1String("hmac(sha224)"))
+        return QStringLiteral("HMAC(SHA-224)");
     else if (type == QLatin1String("hmac(sha256)"))
-        return QStringLiteral("SHA-256");
+        return QStringLiteral("HMAC(SHA-256)");
     else if (type == QLatin1String("hmac(sha384)"))
-        return QStringLiteral("SHA-384");
+        return QStringLiteral("HMAC(SHA-384)");
     else if (type == QLatin1String("hmac(sha512)"))
-        return QStringLiteral("SHA-512");
+        return QStringLiteral("HMAC(SHA-512)");
     else if (type == QLatin1String("hmac(ripemd160)"))
-        return QStringLiteral("RIPEMD-160");
+        return QStringLiteral("HMAC(RIPEMD-160)");
 
     return {};
 }
@@ -155,17 +157,15 @@ class BotanHMACContext : public QCA::MACContext
 public:
     BotanHMACContext(QCA::Provider *p, const QString &type)
         : QCA::MACContext(p, type)
+        , m_hashObj(Botan::MessageAuthenticationCode::create(qcaHmacToBotanHmac(type).toStdString()))
     {
-        const QString hashName = qcaHmacToBotanHmac(type);
-        m_hashObj = new Botan::HMAC(Botan::HashFunction::create_or_throw(hashName.toStdString()).release());
         if (nullptr == m_hashObj) {
-            std::cout << "null context object" << std::endl;
+            std::cout << "null context object " << qcaHmacToBotanHmac(type).toStdString() << std::endl;
         }
     }
 
     ~BotanHMACContext() override
     {
-        delete m_hashObj;
     }
 
     void setup(const QCA::SymmetricKey &key) override
@@ -206,7 +206,7 @@ public:
     }
 
 protected:
-    Botan::HMAC *m_hashObj;
+    std::unique_ptr<Botan::MessageAuthenticationCode> m_hashObj;
 };
 
 static QString qcaPbkdfToBotanPbkdf(const QString &pbkdf)
@@ -252,7 +252,7 @@ public:
         return new BotanPBKDFContext(provider(), type());
     }
 
-    QCA::SymmetricKey makeKey(const QCA::SecureArray &         secret,
+    QCA::SymmetricKey makeKey(const QCA::SecureArray          &secret,
                               const QCA::InitializationVector &salt,
                               unsigned int                     keyLength,
                               unsigned int                     iterationCount) override
@@ -267,11 +267,11 @@ public:
         return QCA::SymmetricKey(retval);
     }
 
-    QCA::SymmetricKey makeKey(const QCA::SecureArray &         secret,
+    QCA::SymmetricKey makeKey(const QCA::SecureArray          &secret,
                               const QCA::InitializationVector &salt,
                               unsigned int                     keyLength,
                               int                              msecInterval,
-                              unsigned int *                   iterationCount) override
+                              unsigned int                    *iterationCount) override
     {
         Q_ASSERT(iterationCount != nullptr);
         Botan::OctetString key;
@@ -294,7 +294,7 @@ protected:
 static QString qcaHkdfToBotanHkdf(const QString &type)
 {
     if (type == QLatin1String("hkdf(sha256)"))
-        return QStringLiteral("SHA-256");
+        return QStringLiteral("HKDF(SHA-256)");
 
     return {};
 }
@@ -306,16 +306,12 @@ class BotanHKDFContext : public QCA::HKDFContext
 public:
     BotanHKDFContext(QCA::Provider *p, const QString &type)
         : QCA::HKDFContext(p, type)
+        , m_hkdf(Botan::KDF::create(qcaHkdfToBotanHkdf(type).toStdString()))
     {
-        const QString hashName = qcaHkdfToBotanHkdf(type);
-        Botan::HMAC * hashObj;
-        hashObj = new Botan::HMAC(Botan::HashFunction::create_or_throw(hashName.toStdString()).release());
-        m_hkdf  = new Botan::HKDF(hashObj);
     }
 
     ~BotanHKDFContext() override
     {
-        delete m_hkdf;
     }
 
     Context *clone() const override
@@ -323,7 +319,7 @@ public:
         return new BotanHKDFContext(provider(), type());
     }
 
-    QCA::SymmetricKey makeKey(const QCA::SecureArray &         secret,
+    QCA::SymmetricKey makeKey(const QCA::SecureArray          &secret,
                               const QCA::InitializationVector &salt,
                               const QCA::InitializationVector &info,
                               unsigned int                     keyLength) override
@@ -342,7 +338,7 @@ public:
     }
 
 protected:
-    Botan::HKDF *m_hkdf;
+    std::unique_ptr<Botan::KDF> m_hkdf;
 };
 
 static void
@@ -454,6 +450,14 @@ static std::string qcaCipherToBotanCipher(const QString &qcaCipher)
     return algoName + '/' + algoMode + '/' + algoPadding; // NOLINT(performance-inefficient-string-concatenation)
 }
 
+#if BOTAN_VERSION_MAJOR == 2
+#define BOTAN_CIPHER_DIR_ENCRYPTION Botan::ENCRYPTION
+#define BOTAN_CIPHER_DIR_DECRYPTION Botan::DECRYPTION
+#elif BOTAN_VERSION_MAJOR == 3
+#define BOTAN_CIPHER_DIR_ENCRYPTION Botan::Cipher_Dir::Encryption
+#define BOTAN_CIPHER_DIR_DECRYPTION Botan::Cipher_Dir::Decryption
+#endif
+
 //-----------------------------------------------------------
 class BotanCipherContext : public QCA::CipherContext
 {
@@ -466,9 +470,9 @@ public:
     }
 
     void setup(QCA::Direction                   dir,
-               const QCA::SymmetricKey &        key,
+               const QCA::SymmetricKey         &key,
                const QCA::InitializationVector &iv,
-               const QCA::AuthTag &             tag) override
+               const QCA::AuthTag              &tag) override
     {
         Q_UNUSED(tag);
         try {
@@ -478,19 +482,23 @@ public:
             if (iv.size() == 0) {
                 if (QCA::Encode == dir) {
                     m_crypter = new Botan::Pipe(Botan::get_cipher(
-                        m_algoName + '/' + m_algoMode + '/' + m_algoPadding, keyCopy, Botan::ENCRYPTION));
+                        m_algoName + '/' + m_algoMode + '/' + m_algoPadding, keyCopy, BOTAN_CIPHER_DIR_ENCRYPTION));
                 } else {
                     m_crypter = new Botan::Pipe(Botan::get_cipher(
-                        m_algoName + '/' + m_algoMode + '/' + m_algoPadding, keyCopy, Botan::DECRYPTION));
+                        m_algoName + '/' + m_algoMode + '/' + m_algoPadding, keyCopy, BOTAN_CIPHER_DIR_DECRYPTION));
                 }
             } else {
                 const Botan::InitializationVector ivCopy((Botan::byte *)iv.data(), iv.size());
                 if (QCA::Encode == dir) {
-                    m_crypter = new Botan::Pipe(Botan::get_cipher(
-                        m_algoName + '/' + m_algoMode + '/' + m_algoPadding, keyCopy, ivCopy, Botan::ENCRYPTION));
+                    m_crypter = new Botan::Pipe(Botan::get_cipher(m_algoName + '/' + m_algoMode + '/' + m_algoPadding,
+                                                                  keyCopy,
+                                                                  ivCopy,
+                                                                  BOTAN_CIPHER_DIR_ENCRYPTION));
                 } else {
-                    m_crypter = new Botan::Pipe(Botan::get_cipher(
-                        m_algoName + '/' + m_algoMode + '/' + m_algoPadding, keyCopy, ivCopy, Botan::DECRYPTION));
+                    m_crypter = new Botan::Pipe(Botan::get_cipher(m_algoName + '/' + m_algoMode + '/' + m_algoPadding,
+                                                                  keyCopy,
+                                                                  ivCopy,
+                                                                  BOTAN_CIPHER_DIR_DECRYPTION));
                 }
             }
             m_crypter->start_msg();
@@ -567,7 +575,7 @@ protected:
     std::string          m_algoMode;
     std::string          m_algoPadding;
     Botan::Keyed_Filter *m_cipher;
-    Botan::Pipe *        m_crypter;
+    Botan::Pipe         *m_crypter;
 };
 
 //==========================================================
@@ -599,11 +607,13 @@ public:
     {
         static QStringList list;
         if (list.isEmpty()) {
-            list += QStringLiteral("pbkdf1(sha1)");
-            std::unique_ptr<BotanPBKDFContext> pbkdf1md2(new BotanPBKDFContext(nullptr, QStringLiteral("pbkdf1(md2)")));
-            if (pbkdf1md2->isOk())
-                list += QStringLiteral("pbkdf1(md2)");
-            list += QStringLiteral("pbkdf2(sha1)");
+            static const QStringList allTypes = {
+                QStringLiteral("pbkdf1(sha1)"), QStringLiteral("pbkdf1(md2)"), QStringLiteral("pbkdf2(sha1)")};
+            for (const QString &type : allTypes) {
+                std::unique_ptr<BotanPBKDFContext> pbkdf(new BotanPBKDFContext(nullptr, type));
+                if (pbkdf->isOk())
+                    list += type;
+            }
         }
         return list;
     }
@@ -622,7 +632,7 @@ public:
             list += QStringLiteral("sha512");
             list += QStringLiteral("ripemd160");
 
-            for (const QString &hash : qAsConst(list)) {
+            for (const QString &hash : std::as_const(list)) {
                 std::unique_ptr<BotanHashContext> hashContext(new BotanHashContext(nullptr, hash));
                 if (hashContext->isOk()) {
                     supported << hash;
@@ -662,11 +672,13 @@ public:
             list += QStringLiteral("blowfish-cfb");
             list += QStringLiteral("blowfish-ofb");
 
-            for (const QString &cipher : qAsConst(list)) {
+            for (const QString &cipher : std::as_const(list)) {
                 const std::string bothanCipher = qcaCipherToBotanCipher(cipher);
                 try {
-                    std::unique_ptr<Botan::Keyed_Filter> enc(Botan::get_cipher(bothanCipher, Botan::ENCRYPTION));
-                    std::unique_ptr<Botan::Keyed_Filter> dec(Botan::get_cipher(bothanCipher, Botan::DECRYPTION));
+                    std::unique_ptr<Botan::Keyed_Filter> enc(
+                        Botan::get_cipher(bothanCipher, BOTAN_CIPHER_DIR_ENCRYPTION));
+                    std::unique_ptr<Botan::Keyed_Filter> dec(
+                        Botan::get_cipher(bothanCipher, BOTAN_CIPHER_DIR_DECRYPTION));
                     supported += cipher;
                 } catch (Botan::Exception &e) {
                 }
@@ -682,9 +694,10 @@ public:
             list += QStringLiteral("hmac(md5)");
             list += QStringLiteral("hmac(sha1)");
             // HMAC with SHA2 doesn't appear to work correctly in Botan.
-            // list += QStringLiteral("hmac(sha256)");
-            // list += QStringLiteral("hmac(sha384)");
-            // list += QStringLiteral("hmac(sha512)");
+            list += QStringLiteral("hmac(sha224)");
+            list += QStringLiteral("hmac(sha256)");
+            list += QStringLiteral("hmac(sha384)");
+            list += QStringLiteral("hmac(sha512)");
             list += QStringLiteral("hmac(ripemd160)");
         }
         return list;

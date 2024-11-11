@@ -9,7 +9,7 @@ Forwarded: no
 
 --- a/unittest/pipeunittest/pipeunittest.cpp
 +++ b/unittest/pipeunittest/pipeunittest.cpp
-@@ -110,17 +110,17 @@ void PipeUnitTest::readWrite()
+@@ -112,17 +112,17 @@ void PipeUnitTest::readWrite()
      pipe1.readEnd().enable();
  
      pipe1.writeEnd().write(testData1);
@@ -31,7 +31,7 @@ Forwarded: no
      QCOMPARE(pipe1.readEnd().bytesAvailable(), testData1.size() + testData2.size());
      QByteArray thisRead = pipe1.readEnd().read(1);
      QCOMPARE(thisRead, QByteArray("D"));
-@@ -145,17 +145,17 @@ void PipeUnitTest::readWriteSecure()
+@@ -147,17 +147,17 @@ void PipeUnitTest::readWriteSecure()
      pipe1.readEnd().enable();
  
      pipe1.writeEnd().writeSecure(testData1);
@@ -53,7 +53,7 @@ Forwarded: no
      QCOMPARE(pipe1.readEnd().bytesAvailable(), testData1.size() + testData2.size());
      QCA::SecureArray thisRead = pipe1.readEnd().readSecure(1);
      QCOMPARE(thisRead, QCA::SecureArray("D"));
-@@ -191,8 +191,8 @@ void PipeUnitTest::signalTests()
+@@ -193,8 +193,8 @@ void PipeUnitTest::signalTests()
  
      QByteArray data("Far better, it is, to dare mighty things");
      pipe->writeEnd().write(data);
@@ -64,7 +64,7 @@ Forwarded: no
      QCOMPARE(readyReadSpy.count(), 1);
      QCOMPARE(bytesWrittenSpy.count(), 1);
      // this pulls out the first argument to the first signal as an integer
-@@ -203,11 +203,11 @@ void PipeUnitTest::signalTests()
+@@ -205,11 +205,11 @@ void PipeUnitTest::signalTests()
      QCOMPARE(closedReadSpy.count(), 0);
  
      pipe->readEnd().close();
@@ -78,7 +78,7 @@ Forwarded: no
      QCOMPARE(closedWriteSpy.count(), 1);
      QCOMPARE(closedReadSpy.count(), 1);
  }
-@@ -238,8 +238,8 @@ void PipeUnitTest::signalTestsSecure()
+@@ -240,8 +240,8 @@ void PipeUnitTest::signalTestsSecure()
  
      QCA::SecureArray data("Far better, it is, to dare mighty things");
      pipe->writeEnd().writeSecure(data);
@@ -89,7 +89,7 @@ Forwarded: no
      QCOMPARE(readyReadSpy.count(), 1);
      QCOMPARE(bytesWrittenSpy.count(), 1);
      // this pulls out the first argument to the first signal as an integer
-@@ -250,11 +250,11 @@ void PipeUnitTest::signalTestsSecure()
+@@ -252,11 +252,11 @@ void PipeUnitTest::signalTestsSecure()
      QCOMPARE(closedReadSpy.count(), 0);
  
      pipe->readEnd().close();

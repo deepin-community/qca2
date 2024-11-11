@@ -9,22 +9,40 @@ export DEB_CXXFLAGS_MAINT_APPEND = -fvisibility=hidden -fvisibility-inlines-hidd
 libpkgs_gen_strict_local_shlibs = $(libpkgs_all_packages)
 include /usr/share/pkg-kde-tools/qt-kde-team/3/library-packages.mk
 
+COMMON_CMAKE_ARGS = -DLIB_SUFFIX="/$(DEB_HOST_MULTIARCH)" -DWITH_botan_PLUGIN=NO -DWITH_gcrypt_PLUGIN=NO -DWITH_nss_PLUGIN=NO -DWITH_pkcs11_PLUGIN=NO
+
 %:
 	dh $@ --builddirectory=build
 
+execute_after_dh_auto_clean:
+	rm -rf build-qt6
+
 override_dh_auto_configure:
 	QT_SELECT=qt5 dh_auto_configure --builddirectory=build -- \
-	    -DQT5_BUILD=ON -DLIB_SUFFIX="/$(DEB_HOST_MULTIARCH)" \
+	    $(COMMON_CMAKE_ARGS) \
+	    -DQT5_BUILD=ON \
 	    -DQCA_FEATURE_INSTALL_DIR="/usr/lib/$(DEB_HOST_MULTIARCH)/qt5/mkspecs/features"
+	dh_auto_configure --builddirectory=build-qt6 -- \
+	    $(COMMON_CMAKE_ARGS) \
+	    -DBUILD_WITH_QT6=ON \
+	    -DQCA_FEATURE_INSTALL_DIR="/usr/lib/$(DEB_HOST_MULTIARCH)/qt6/mkspecs/features"
 
 override_dh_auto_build-arch:
 	dh_auto_build --builddirectory=build
+	dh_auto_build --builddirectory=build-qt6
 
 override_dh_auto_build-indep:
 	dh_auto_build --builddirectory=build -- doc
 	find build/apidocs/html -name '*.md5' -delete
 
+execute_after_dh_auto_install-arch:
+	dh_auto_install --builddirectory=build-qt6
+
 override_dh_auto_install-indep:
+
+override_dh_auto_test-arch:
+	QT_PLUGIN_PATH=$(CURDIR)/build/lib/qca-qt5/ dh_auto_test -a
+	QT_PLUGIN_PATH=$(CURDIR)/build-qt6/lib/qca-qt6/ dh_auto_test --builddirectory=build-qt6 -a
 
 override_dh_auto_test-indep:
 

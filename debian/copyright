@@ -176,14 +176,9 @@ License: Expat
  AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
  CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-Files: cmake/modules/FindLibGcrypt.cmake
-       cmake/modules/FindPkcs11Helper.cmake
+Files: cmake/modules/FindPkcs11Helper.cmake
        cmake/modules/FindSasl2.cmake
-Copyright: 2006, Benjamin Reed <ranger@befunk.com>
-           2006, Brad Hards <bradh@kde.org>
-           2005-2011, Kitware, Inc
-           2006, Laurent Montel <montel@kde.org>
-           2014, Samuel Gaist <samuel.gaist@edeltech.ch>
+Copyright: 2006, Laurent Montel <montel@kde.org>
 License: BSD-3-clause
  Redistribution and use in source and binary forms, with or without
  modification, are permitted provided that the following conditions
