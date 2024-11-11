@@ -1,8 +1,17 @@
 find_package(PkgConfig REQUIRED)
-if(WITH_botan_PLUGIN STREQUAL "yes")
-  pkg_check_modules(BOTAN REQUIRED IMPORTED_TARGET botan-2)
-else()
-  pkg_check_modules(BOTAN IMPORTED_TARGET botan-2)
+
+pkg_check_modules(BOTAN IMPORTED_TARGET botan-2)
+if(NOT BOTAN_FOUND)
+  pkg_check_modules(BOTAN IMPORTED_TARGET botan-3)
+  if(BOTAN_FOUND)
+    set(CMAKE_CXX_STANDARD 20)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    set(CMAKE_CXX_EXTENSIONS OFF)
+  endif()
+endif()
+
+if(WITH_botan_PLUGIN STREQUAL "yes" AND NOT BOTAN_FOUND)
+  message(FATAL_ERROR "botan requested and not found")
 endif()
 
 if(BOTAN_FOUND)
@@ -15,11 +24,7 @@ if(BOTAN_FOUND)
     set_property(TARGET qca-botan  PROPERTY SUFFIX ".dylib")
   endif()
 
-  if(QT6)
-    target_link_libraries(qca-botan Qt6::Core ${QCA_LIB_NAME} PkgConfig::BOTAN)
-  else()
-    target_link_libraries(qca-botan Qt5::Core ${QCA_LIB_NAME} PkgConfig::BOTAN)
-  endif()
+  target_link_libraries(qca-botan Qt${QT_MAJOR_VERSION}::Core ${QCA_LIB_NAME} PkgConfig::BOTAN)
 
   if(NOT DEVELOPER_MODE)
     install(TARGETS qca-botan

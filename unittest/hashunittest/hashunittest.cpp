@@ -81,6 +81,7 @@ void HashUnitTest::initTestCase()
     const auto providers = QCA::providers();
     for (QCA::Provider *provider : providers)
         providersToTest << provider->name();
+    providersToTest << QCA::defaultProvider()->name();
 }
 
 void HashUnitTest::cleanupTestCase()
@@ -580,7 +581,7 @@ void HashUnitTest::sha384longtest()
     fillerString.fill('a', 1000);
 
     foreach (QString provider, providersToTest) {
-        if (!QCA::isSupported("sha384", provider)) {
+        if (QCA::isSupported("sha384", provider)) {
             // QTime t;
             // t.start();
             QCA::Hash shaHash(QStringLiteral("sha384"), provider);

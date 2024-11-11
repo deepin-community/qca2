@@ -4,3 +4,6 @@ Restrictions: allow-stderr
 
 Tests: ciphertest-qt5
 Depends: build-essential, cmake, libqca-qt5-2-dev, libqca-qt5-2-plugins
+
+Tests: ciphertest-qt6
+Depends: build-essential, cmake, libqca-qt6-dev, libqca-qt6-plugins

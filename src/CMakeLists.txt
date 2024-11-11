@@ -52,7 +52,7 @@ SET( SOURCES
 
 IF (WIN32)
   SET( SOURCES ${SOURCES} qca_systemstore_win.cpp )
-elseif(APPLE)
+elseif(APPLE AND NOT IOS)
   set( SOURCES ${SOURCES} qca_systemstore_mac.cpp)
 else()
   SET( SOURCES ${SOURCES} qca_systemstore_flatfile.cpp )
@@ -124,20 +124,19 @@ ENDIF(WIN32)
 SET( SOURCES ${SOURCES} ${botan_SOURCES})
 
 add_library(${QCA_LIB_NAME} ${SOURCES}  ${public_HEADERS})
-if(QT6)
-  target_link_libraries(${QCA_LIB_NAME} Qt6::Core Qt6::Core5Compat)
-else()
-  target_link_libraries(${QCA_LIB_NAME} Qt5::Core)
+target_link_libraries(${QCA_LIB_NAME} PUBLIC Qt${QT_MAJOR_VERSION}::Core)
+if(BUILD_WITH_QT6)
+  target_link_libraries(${QCA_LIB_NAME} PRIVATE Qt6::Core5Compat)
 endif()
 
 if(WIN32)
-	TARGET_LINK_LIBRARIES(${QCA_LIB_NAME} crypt32 ws2_32)
+	TARGET_LINK_LIBRARIES(${QCA_LIB_NAME} PRIVATE crypt32 ws2_32)
 endif()
 
-if(APPLE)
+if(APPLE AND NOT IOS)
   set(COREFOUNDATION_LIBRARY "-framework CoreFoundation")
   set(COREFOUNDATION_LIBRARY_SECURITY "-framework Security")
-  TARGET_LINK_LIBRARIES(${QCA_LIB_NAME} ${COREFOUNDATION_LIBRARY} ${COREFOUNDATION_LIBRARY_SECURITY})
+  TARGET_LINK_LIBRARIES(${QCA_LIB_NAME} PRIVATE ${COREFOUNDATION_LIBRARY} ${COREFOUNDATION_LIBRARY_SECURITY})
 
   if(NOT USE_RELATIVE_PATHS)
     set_target_properties(${QCA_LIB_NAME} PROPERTIES

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<descriptor>
+
+<version>
+    2.3.6
+</version>
+
+<headers>
+    /usr/include/Qca-qt6
+</headers>
+
+<libs>
+    /usr/lib/@@DEB_HOST_MULTIARCH@@/libqca-qt6.so
+</libs>
+
+<gcc_options>
+    -fPIC
+</gcc_options>
+
+</descriptor>
