@@ -1,4 +1,4 @@
-# SymbolsHelper-Confirmed: 2.3.6 alpha amd64 arm64 armel armhf hppa hurd-i386 i386 mips64el mipsel powerpc ppc64 ppc64el riscv64 s390x sparc64
+# SymbolsHelper-Confirmed: 2.3.10 amd64 i386
 libqca-qt5.so.2 libqca-qt5-2 #MINVER#
 * Build-Depends-Package: libqca-qt5-2-dev
  _Z10qcaVersionv@Base 2.0.2
@@ -1712,8 +1712,7 @@ libqca-qt5.so.2 libqca-qt5-2 #MINVER#
  _ZNK3QCA9SafeTimer7Private10metaObjectEv@Base 2.1.0+git20141127.0049+15.04
  _ZNK3QCA9SafeTimer8intervalEv@Base 2.1.0+git20141127.0049+15.04
  _ZNK3QCA9SafeTimer8isActiveEv@Base 2.1.0+git20141127.0049+15.04
- (optional=templinst|arch=!amd64 !arm64 !hppa)_ZNSt6vectorISt4pairIPvjESaIS2_EE17_M_realloc_insertIJRS1_RKjEEEvN9__gnu_cxx17__normal_iteratorIPS2_S4_EEDpOT_@Base 2.3.0
- (optional=templinst|arch=alpha amd64 arm64 armel armhf hppa i386 mips64el mipsel powerpc ppc64 ppc64el s390x sparc64)_ZStplIcSt11char_traitsIcESaIcEENSt7__cxx1112basic_stringIT_T0_T1_EEPKS5_RKS8_@Base 2.1.0.3
+ (optional=templinst|arch=i386)_ZSt19piecewise_construct@Base 2.3.9
  _ZTIN3QCA10CRLContextE@Base 2.0.2
  _ZTIN3QCA10CSRContextE@Base 2.0.2
  _ZTIN3QCA10DSAContextE@Base 2.0.2

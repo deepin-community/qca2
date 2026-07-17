@@ -1,6 +1,6 @@
-cmake_minimum_required(VERSION 3.13)
+cmake_minimum_required(VERSION 3.18)
 
-project(ciphertest)
+project(ciphertest LANGUAGES CXX)
 
 if(QT_VERSION STREQUAL "6")
   find_package(Qt6Core REQUIRED)
