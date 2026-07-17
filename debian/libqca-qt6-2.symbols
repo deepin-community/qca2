@@ -1,4 +1,4 @@
-# SymbolsHelper-Confirmed: 2.3.6 alpha amd64 arm64 armel armhf hppa hurd-i386 i386 mips64el mipsel powerpc ppc64 ppc64el riscv64 s390x sparc64
+# SymbolsHelper-Confirmed: 2.3.10 amd64 i386
 libqca-qt6.so.2 libqca-qt6-2 #MINVER#
 * Build-Depends-Package: libqca-qt6-dev
  _Z10qcaVersionv@Base 2.3.6
@@ -1721,13 +1721,12 @@ libqca-qt6.so.2 libqca-qt6-2 #MINVER#
  (optional=templinst)_ZNKSt8_Rb_treeI7QStringSt4pairIKS0_8QVariantESt10_Select1stIS4_ESt4lessIS0_ESaIS4_EE4findERS2_@Base 2.3.6
  (optional=templinst)_ZNKSt8_Rb_treeIN3QCA19CertificateInfoTypeESt4pairIKS1_7QStringESt10_Select1stIS5_ESt4lessIS1_ESaIS5_EE11equal_rangeERS3_@Base 2.3.6
  (optional=templinst)_ZNKSt8_Rb_treeIN3QCA19CertificateInfoTypeESt4pairIKS1_7QStringESt10_Select1stIS5_ESt4lessIS1_ESaIS5_EE4findERS3_@Base 2.3.6
- (optional=templinst|arch=alpha armel armhf hurd-i386 i386 mips64el mipsel powerpc ppc64 ppc64el riscv64 s390x sparc64)_ZNSt6vectorISt4pairIPvjESaIS2_EE17_M_realloc_insertIJRS1_RKjEEEvN9__gnu_cxx17__normal_iteratorIPS2_S4_EEDpOT_@Base 2.3.6
  (optional=templinst)_ZNSt8_Rb_treeI7QStringSt4pairIKS0_8QVariantESt10_Select1stIS4_ESt4lessIS0_ESaIS4_EE16_M_insert_uniqueIS4_EES1_ISt17_Rb_tree_iteratorIS4_EbEOT_@Base 2.3.6
  (optional=templinst)_ZNSt8_Rb_treeIN3QCA19CertificateInfoTypeESt4pairIKS1_7QStringESt10_Select1stIS5_ESt4lessIS1_ESaIS5_EE11equal_rangeERS3_@Base 2.3.6
- (optional=templinst|arch=amd64 arm64 armel armhf hppa mips64el ppc64el riscv64 sparc64)_ZNSt8_Rb_treeIN3QCA19CertificateInfoTypeESt4pairIKS1_7QStringESt10_Select1stIS5_ESt4lessIS1_ESaIS5_EE15_M_insert_lowerIS5_EESt17_Rb_tree_iteratorIS5_EPSt18_Rb_tree_node_baseOT_@Base 2.3.6
- (optional=templinst|arch=alpha hurd-i386 i386 mipsel powerpc ppc64 s390x)_ZNSt8_Rb_treeIN3QCA19CertificateInfoTypeESt4pairIKS1_7QStringESt10_Select1stIS5_ESt4lessIS1_ESaIS5_EE21_M_insert_equal_lowerIS5_EESt17_Rb_tree_iteratorIS5_EOT_@Base 2.3.6
+ (optional=templinst)_ZNSt8_Rb_treeIN3QCA19CertificateInfoTypeESt4pairIKS1_7QStringESt10_Select1stIS5_ESt4lessIS1_ESaIS5_EE21_M_insert_equal_lowerIRKS5_EESt17_Rb_tree_iteratorIS5_EOT_@Base 2.3.9
+ (optional=templinst|arch=i386)_ZNSt8_Rb_treeIN3QCA19CertificateInfoTypeESt4pairIKS1_7QStringESt10_Select1stIS5_ESt4lessIS1_ESaIS5_EE21_M_insert_equal_lowerIS5_EESt17_Rb_tree_iteratorIS5_EOT_@Base 2.3.6
  (optional=templinst)_ZNSt8_Rb_treeIN3QCA19CertificateInfoTypeESt4pairIKS1_7QStringESt10_Select1stIS5_ESt4lessIS1_ESaIS5_EE28_M_get_insert_hint_equal_posESt23_Rb_tree_const_iteratorIS5_ERS3_@Base 2.3.6
- (optional=templinst|arch=!hurd-i386 !riscv64)_ZStplIcSt11char_traitsIcESaIcEENSt7__cxx1112basic_stringIT_T0_T1_EEPKS5_RKS8_@Base 2.3.6
+ (optional=templinst|arch=i386)_ZSt19piecewise_construct@Base 2.3.9
  _ZTIN3QCA10CRLContextE@Base 2.3.6
  _ZTIN3QCA10CSRContextE@Base 2.3.6
  _ZTIN3QCA10DSAContextE@Base 2.3.6
