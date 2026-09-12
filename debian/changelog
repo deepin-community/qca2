@@ -1,3 +1,9 @@
+qca2 (2.3.10-1deepin1) unstable; urgency=medium
+
+  * Rebuild with LTO enabled (dpkg vendor feature optimize/lto).
+
+ -- lichenggang <lichenggang@uniontech.com>  六, 12 9月 2026 16:26:01 +0800
+
 qca2 (2.3.10-1) unstable; urgency=medium
 
   * New upstream release.
